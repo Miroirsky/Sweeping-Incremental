@@ -1,2 +1,35 @@
-# Sweeping Incremental
+# Sweeping Incremental - Dust Cleaner Game
 
+A minimalist, satisfying browser cleaning game built with WebGL and procedural shaders.
+
+## ✨ Features
+- **Hold-to-Move**: The vacuum moves **only while Left-Click is held down** (or touch on mobile).
+- **Movement Locked While Storing**: You **cannot move while storing** dust into the storage tank. Releasing Space resumes movement.
+- **True Dust Collection**:
+  - The cleaner now uses the **exact same grid model** as the dust cleared indicator.
+  - You **only get dust by cleaning uncleaned/reappeared dust**! Moving over already-cleaned carpet yields **0g**.
+  - Total room dust is calibrated to **1 Kg (1000g)**.
+- **Canister Meter**: Live visual progress bar on the canister badge showing canister fill level from `0.00g` up to capacity.
+- **Vacuum Size**: Scaled to **1% of the screen** (`roomSize * 0.01`).
+- **Square Dust Shop & Menu**:
+  - Located at the bottom as a **sharp brown square button with light brown outlines and a grey circle icon** (0px border-radius).
+  - Sharp square shop modal with white title (`DUST SHOP`).
+  - **Speed Upgrade**: Adds **+0.1% screen/s** to vacuum movement speed. Base cost: `0.5g`, scales by **1.5x** per level.
+  - **Capacity Mult Upgrade**: Adds **+0.1x** to the vacuum space multiplier (`0.5g * multiplier`). Base cost: `0.5g`, scales by **1.5x** per level.
+- **Hold-to-Store (Spacebar)**: **Keep pressing (hold) Space** to store dust from the vacuum into the storage tank at **0.1g/s**.
+- **10g Vertical Storage Progress Bar**: Displayed on the right with tick marks as a **thick vertical grey progress bar with white outlines and a transparent white background**.
+- **10-Second Dust Reappearance**: Dust reappears **10 seconds after being vacuumed** (with a smooth settling fade).
+- **Protected Vacuum Spot**: Dust **never** reappears underneath the vacuum, even when stationary.
+- **Top-Right Minimalist HUD**: Displays `Dust Cleared: X.Xg [X.X%]` (synchronized with the 1 Kg room) and vacuum canister status.
+- **Centered Square Room (Max scale)**: The square cleaning area automatically maximizes to fill your screen and adapts on resize.
+- **Procedural Shaders**:
+  - Grey dust modulated by **2 layers of Perlin noise** (macro drifts + micro clods).
+  - Brown woven plush carpet revealed beneath cleaned paths.
+- **Web Audio FX**: Procedural suction whoosh, vacuum motor hum, full warning alert, storage blips, and upgrade purchase chimes.
+
+## 🚀 How to Play
+Open `index.html` in any modern web browser.
+- **Hold Left Click**: Vacuum towards cursor.
+- **Keep Pressing (Hold) Space**: Store collected dust into the 10g vertical storage bar at 0.1g/s (movement locked while storing).
+- **Click Shop (or press B)**: Open the square Dust Shop to purchase upgrades with stored dust.
+- **Press M**: Toggle audio.
