@@ -37,6 +37,7 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
   - Sharp square shop modal with white title (`DUST SHOP`).
   - Upgrade cards and descriptions update dynamically with every purchase and value change.
   - **Speed Upgrade**: Adds **+0.1% screen/s** movement speed. Cost: `0.5g * 1.5^lvl`.
+  - **Clean Rate Upgrade**: Adds **+50%** cleaning speed. Cost: `0.5g * 1.5^lvl`.
   - **Capacity Mult Upgrade**: Adds **+0.5x** to vacuum canister space multiplier. Cost: `0.5g * 1.5^lvl`.
   - **Store Rate Upgrade**: Adds **+50%** transfer speed while holding Space. Cost: `0.5g * 1.5^lvl`.
   - **Dirt Upgrade**: One-time permanent unlock. Cost: `0.5g`.

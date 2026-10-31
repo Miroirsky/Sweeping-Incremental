@@ -89,6 +89,19 @@ var Values = {
           return `${(Values.getEffectiveSpeed() * 100).toFixed(1)}% / s`;
         }
       },
+      CleanRate: {
+        name: "Clean Efficiency",
+        effect: 0.5,
+        cost: 0.5,
+        mult: 1.5,
+        level: 0,
+        getDesc(upg) {
+          return `+${(upg.effect * 100).toFixed(0)}% cleaning efficiency`;
+        },
+        getStat(upg) {
+          return `${Values.getEffectiveCleanRate().toFixed(2)}g / s`;
+        }
+      },
       CapacityMult: {
         name: "Capacity Mult",
         effect: 0.5,
