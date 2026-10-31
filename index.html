@@ -16,47 +16,58 @@
     <canvas id="overlay-canvas"></canvas>
   </div>
 
-  <!-- Top Right Dust Cleared Indicator & Sound Toggle -->
+  <!-- Top Right Dust & Dirt Indicators & Sound Toggle -->
   <header class="hud-top-right">
     <div class="hud-card indicator-card">
       <span class="stat-icon">🧹</span>
       <span id="dust-indicator" class="stat-text">Dust Cleared: 0.0g [0.0%]</span>
+      <div class="dirt-badge" id="dirt-badge" title="Dirt on Screen (Capped at 100g)">
+        <span class="dirt-icon">🌱</span>
+        <span id="dirt-indicator" class="dirt-text">Dirt: 0.0 / 100g</span>
+      </div>
     </div>
     <button id="sound-btn" class="icon-btn" title="Toggle Sound (M)" aria-label="Toggle Sound">
       <span id="sound-icon">🔊</span>
     </button>
   </header>
 
-  <!-- Bottom Left Robot Storage Progress Bar (like stored dust) -->
+  <!-- Bottom Left Robot Storage Progress Bar (Grey for Dust, Brown for Dirt) -->
   <aside class="robot-storage-sidebar">
     <div id="robot-storage-card" class="storage-card">
       <div class="storage-title">ROBOT</div>
       
       <div class="storage-bar-outer">
         <div class="storage-bar-track">
-          <div id="robot-storage-fill" class="storage-fill"></div>
+          <div id="robot-storage-fill-dust" class="storage-fill robot-fill-dust"></div>
+          <div id="robot-storage-fill-dirt" class="storage-fill robot-fill-dirt"></div>
         </div>
       </div>
 
       <div class="storage-footer">
         <span id="robot-storage-value" class="storage-text">0.00 / 0.50g</span>
+        <div class="storage-breakdown">
+          <span class="mini-tag dust-tag"><span class="dot grey-dot"></span><span id="robot-dust-text">0.00g</span></span>
+          <span class="mini-tag dirt-tag"><span class="dot brown-dot"></span><span id="robot-dirt-text">0.00g</span></span>
+        </div>
       </div>
     </div>
   </aside>
 
-  <!-- Right Vertical Storage Progress Bar (Stored Dust) -->
-  <aside class="storage-sidebar">
-    <div class="storage-card">
-      <div class="storage-title">STORAGE</div>
-      
-      <div class="storage-bar-outer">
-        <div class="storage-bar-track">
-          <div id="storage-fill" class="storage-fill"></div>
-        </div>
+  <!-- Center Right Separate Storage Indicators: Dust & Dirt -->
+  <aside class="storage-center-right" id="storage-indicator-container">
+    <!-- Dust Storage Card -->
+    <div class="storage-card-indicator dust-storage-card" id="storage-dust-card" title="Stored Dust (Infinite)">
+      <div class="storage-indicator-label"><span class="dot grey-dot"></span>DUST</div>
+      <div class="storage-indicator-val-row">
+        <span id="storage-dust-value" class="storage-value-text">0.0g</span>
       </div>
+    </div>
 
-      <div class="storage-footer">
-        <span id="storage-value" class="storage-text">0.0 / 10g</span>
+    <!-- Dirt Storage Card -->
+    <div class="storage-card-indicator dirt-storage-card" id="storage-dirt-card" title="Stored Dirt (Infinite)">
+      <div class="storage-indicator-label"><span class="dot brown-dot"></span>DIRT</div>
+      <div class="storage-indicator-val-row">
+        <span id="storage-dirt-value" class="storage-value-text">0.0g</span>
       </div>
     </div>
   </aside>
@@ -80,46 +91,11 @@
         <button id="shop-close-btn" class="shop-close-btn" aria-label="Close Shop">&times;</button>
       </div>
 
-      <div class="shop-items">
-        <!-- Upgrade 1: Speed -->
-        <div class="shop-item">
-          <div class="item-info">
-            <div class="item-title-row">
-              <span class="item-name">Speed</span>
-              <span id="speed-level" class="item-level">Lvl 0</span>
-            </div>
-            <p class="item-desc">+0.1% screen/s speed</p>
-            <div class="item-stat-row">
-              <span class="stat-current">Current: <strong id="speed-current">1.0% / s</strong></span>
-            </div>
-          </div>
-          <button id="buy-speed-btn" class="buy-btn" title="Buy Speed Upgrade">
-            <span class="buy-label">Buy</span>
-            <span id="speed-cost" class="buy-cost">0.50g</span>
-          </button>
-        </div>
-
-        <!-- Upgrade 2: Capacity Mult -->
-        <div class="shop-item">
-          <div class="item-info">
-            <div class="item-title-row">
-              <span class="item-name">Capacity Mult</span>
-              <span id="capacity-level" class="item-level">Lvl 0</span>
-            </div>
-            <p class="item-desc">+0.1x vacuum space</p>
-            <div class="item-stat-row">
-              <span class="stat-current">Current: <strong id="capacity-current">0.50g (1.0x)</strong></span>
-            </div>
-          </div>
-          <button id="buy-capacity-btn" class="buy-btn" title="Buy Capacity Upgrade">
-            <span class="buy-label">Buy</span>
-            <span id="capacity-cost" class="buy-cost">0.50g</span>
-          </button>
-        </div>
-      </div>
+      <!-- Dynamically generated & updated upgrades from Values.shops.dustShop -->
+      <div class="shop-items" id="shop-items"></div>
 
       <div class="shop-footer">
-        <span class="shop-wallet">Stored Dust: <strong id="shop-stored-dust">0.0g</strong></span>
+        <span class="shop-wallet">Stored Mass: <strong id="shop-stored-dust">0.0g</strong></span>
       </div>
     </div>
   </div>

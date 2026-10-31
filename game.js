@@ -21,11 +21,18 @@
   const overlayCanvas = document.getElementById('overlay-canvas');
   const overlayCtx = overlayCanvas.getContext('2d');
   const dustIndicator = document.getElementById('dust-indicator');
+  const dirtBadge = document.getElementById('dirt-badge');
+  const dirtIndicator = document.getElementById('dirt-indicator');
   const robotStorageCard = document.getElementById('robot-storage-card');
-  const robotStorageFill = document.getElementById('robot-storage-fill');
+  const robotStorageFillDust = document.getElementById('robot-storage-fill-dust');
+  const robotStorageFillDirt = document.getElementById('robot-storage-fill-dirt');
   const robotStorageValue = document.getElementById('robot-storage-value');
-  const storageFill = document.getElementById('storage-fill');
-  const storageValue = document.getElementById('storage-value');
+  const robotDustText = document.getElementById('robot-dust-text');
+  const robotDirtText = document.getElementById('robot-dirt-text');
+  const storageDustCard = document.getElementById('storage-dust-card');
+  const storageDirtCard = document.getElementById('storage-dirt-card');
+  const storageDustValue = document.getElementById('storage-dust-value');
+  const storageDirtValue = document.getElementById('storage-dirt-value');
   const soundBtn = document.getElementById('sound-btn');
   const soundIcon = document.getElementById('sound-icon');
   const hintOverlay = document.getElementById('hint-overlay');
@@ -36,14 +43,7 @@
   const shopBtn = document.getElementById('shop-btn');
   const shopModal = document.getElementById('shop-modal');
   const shopCloseBtn = document.getElementById('shop-close-btn');
-  const speedLevelDisplay = document.getElementById('speed-level');
-  const speedCurrentDisplay = document.getElementById('speed-current');
-  const speedCostDisplay = document.getElementById('speed-cost');
-  const buySpeedBtn = document.getElementById('buy-speed-btn');
-  const capacityLevelDisplay = document.getElementById('capacity-level');
-  const capacityCurrentDisplay = document.getElementById('capacity-current');
-  const capacityCostDisplay = document.getElementById('capacity-cost');
-  const buyCapacityBtn = document.getElementById('buy-capacity-btn');
+  const shopItemsContainer = document.getElementById('shop-items');
   const shopStoredDust = document.getElementById('shop-stored-dust');
 
   // --- WebGL Context ---
@@ -52,6 +52,8 @@
   let maskTexture = null;
   let maskCanvas = null;
   let maskCtx = null;
+  let dirtTexture = null;
+  let dirtTextureNeedsUpdate = false;
 
   // --- Game State & Room Geometry ---
   let width = window.innerWidth;
@@ -70,6 +72,23 @@
   const GRID_RES = 160;
   const roomGrid = new Float64Array(GRID_RES * GRID_RES); // stores timeCleaned
   const CELL_DUST = Values.room.dustCapacity / (GRID_RES * GRID_RES); // mass of single cell
+
+  // Room Dirt Tracking: 160 x 160 cells (capped at 100g on the screen)
+  const dirtGrid = new Float32Array(GRID_RES * GRID_RES); // grams of dirt in each cell
+  const dirtBytes = new Uint8Array(GRID_RES * GRID_RES); // 0..255 for WebGL texture
+  let currentScreenDirtGrams = 0.0;
+  const MAX_SCREEN_DIRT = 100.0;
+  let dirtZones = []; // active organic dirt zones that sprout & grow
+  let lastDirtZoneSpawn = performance.now();
+  let dirtNoiseSeed = Math.random() * 10000.0;
+  let isDirtGenerating = false; // generated only when under 70% of max dirt, up to 100%
+
+  // Randomizes the noise seed every time the dirt in the room hits the 100g cap
+  function randomizeDirtNoiseSeed() {
+    noiseOffset[0] = Math.random() * 5000.0;
+    noiseOffset[1] = Math.random() * 5000.0;
+    dirtNoiseSeed = Math.random() * 10000.0;
+  }
 
   // Upgrades and dynamic state helpers referencing window.Values
   function getSpeedCost() {
@@ -120,9 +139,15 @@
   let reachedMilestones = new Set();
   const MILESTONES = [25, 50, 75, 90, 100];
 
-  // Particle System
+  // Particle Systems
   const particles = [];
   const MAX_PARTICLES = 80;
+
+  // Transfer particles from bot to top of storage progress
+  const transferParticles = [];
+  const MAX_TRANSFER_PARTICLES = 90;
+  const splashParticles = [];
+  const MAX_SPLASH_PARTICLES = 30;
 
   // --- Shaders ---
   const vertexShaderSource = `
@@ -141,8 +166,12 @@
     uniform vec2 u_resolution;
     uniform vec4 u_room; // (roomMinX, roomMinY, roomSize, roomSize) in gl_FragCoord px
     uniform sampler2D u_mask;
+    uniform sampler2D u_dirt_mask;
     uniform vec2 u_cleaner; // gl_FragCoord px
     uniform float u_cleaner_radius;
+    uniform float u_dust_fill; // [0.0 .. 1.0] vacuum canister dust fraction
+    uniform float u_dirt_fill; // [0.0 .. 1.0] vacuum canister dirt fraction
+    uniform float u_cleaner_is_full; // 1.0 if vacuum canister is full
     uniform vec2 u_noise_offset;
     uniform float u_time;
 
@@ -244,13 +273,38 @@
         // Reveal carpet underneath dust
         surface = mix(carpetColor, dustColor, dustAlpha);
 
+        // ==========================================
+        // 3.5. DIRT ZONES LAYER (Smooth organic growing clay/mud blobs)
+        // ==========================================
+        float dirtVal = texture2D(u_dirt_mask, maskUV).r;
+        if (dirtVal > 0.005) {
+          float dirtNoise = perlin(roomUV * 22.0 + u_noise_offset * 0.3);
+          float microTexture = perlin(roomUV * 55.0);
+
+          // Warm terracotta/clay dirt tones matching the reference drawing
+          vec3 deepDirt = vec3(0.55, 0.27, 0.20);
+          vec3 warmDirt = vec3(0.72, 0.38, 0.30);
+          vec3 rimDirt  = vec3(0.44, 0.19, 0.13);
+
+          vec3 dirtColor = mix(deepDirt, warmDirt, 0.5 + 0.35 * dirtNoise + 0.15 * microTexture);
+
+          // Smooth antialiased blob silhouette edge
+          float blobAlpha = smoothstep(0.04, 0.16, dirtVal);
+
+          // Subtle natural rim darkening along the puddle edge
+          float edgeRim = smoothstep(0.04, 0.10, dirtVal) * (1.0 - smoothstep(0.10, 0.22, dirtVal));
+          dirtColor = mix(dirtColor, rimDirt, edgeRim * 0.4);
+
+          surface = mix(surface, dirtColor, blobAlpha);
+        }
+
         // Soft wall ambient occlusion inside perimeter of room
         float wallShadow = smoothstep(0.0, 16.0, roomEdgeDist);
         surface *= (0.76 + 0.24 * wallShadow);
       }
 
       // ==========================================
-      // 4. WHITE CLEANER CIRCLE
+      // 4. CLEANER CIRCLE (Grey for Dust, Brown for Dirt)
       // ==========================================
       float distToCleaner = length(fragCoord - u_cleaner);
       float r = u_cleaner_radius;
@@ -266,9 +320,57 @@
       float shadowDist = smoothstep(r + 6.0, r, distToCleaner);
       surface = mix(surface, vec3(0.05, 0.02, 0.01), shadowDist * 0.35 * (1.0 - circleMask));
 
-      // Crisp solid white circle
+      // Crisp circle with white outer rim and stacked dust/dirt fills inside
       if (circleMask > 0.0) {
-        surface = mix(surface, vec3(1.0, 1.0, 1.0), circleMask);
+        float borderWidth = max(1.8, r * 0.20);
+        float rInner = max(1.0, r - borderWidth);
+
+        vec3 circleColor;
+        if (distToCleaner >= rInner) {
+          // White outer rim (pulsing red when full)
+          vec3 rimColor = vec3(1.0, 1.0, 1.0);
+          if (u_cleaner_is_full > 0.5) {
+            rimColor = mix(vec3(1.0, 1.0, 1.0), vec3(1.0, 0.35, 0.35), 0.5 + 0.5 * sin(u_time * 8.0));
+          }
+          circleColor = rimColor;
+        } else {
+          // Inner canister: fills with grey for dust and brown for dirt!
+          float fillY = clamp((fragCoord.y - (u_cleaner.y - rInner)) / (2.0 * rInner), 0.0, 1.0);
+
+          // Storage grey gradient (matches #9ca3af to #6b7280)
+          vec3 greyFill = mix(vec3(0.42, 0.45, 0.50), vec3(0.61, 0.64, 0.69), fillY);
+
+          // Storage brown gradient (matches terracotta/clay dirt tone)
+          vec3 brownFill = mix(vec3(0.48, 0.22, 0.15), vec3(0.70, 0.38, 0.29), fillY);
+
+          // Empty canister interior (clean off-white background)
+          vec3 emptyFill = vec3(0.92, 0.94, 0.96);
+
+          float totalFill = clamp(u_dust_fill + u_dirt_fill, 0.0, 1.0);
+
+          vec3 innerColor = emptyFill;
+          if (fillY <= u_dust_fill) {
+            innerColor = greyFill;
+            // Meniscus highlight at top of dust
+            if (abs(fillY - u_dust_fill) < 0.02 && u_dust_fill > 0.02) {
+              innerColor = mix(innerColor, vec3(1.0, 1.0, 1.0), 0.7);
+            }
+          } else if (fillY <= totalFill) {
+            innerColor = brownFill;
+            // Meniscus highlight at top of dirt
+            if (abs(fillY - totalFill) < 0.02 && totalFill > 0.02) {
+              innerColor = mix(innerColor, vec3(1.0, 0.9, 0.8), 0.75);
+            }
+          }
+
+          if (u_cleaner_is_full > 0.5) {
+            innerColor = mix(innerColor, vec3(0.92, 0.35, 0.35), 0.3 + 0.2 * sin(u_time * 8.0));
+          }
+
+          circleColor = innerColor;
+        }
+
+        surface = mix(surface, circleColor, circleMask);
       }
 
       gl_FragColor = vec4(surface, 1.0);
@@ -332,6 +434,14 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
+    // Create dirt texture
+    dirtTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, dirtTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
     return true;
   }
 
@@ -370,6 +480,17 @@
     gl.bindTexture(gl.TEXTURE_2D, maskTexture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, gl.LUMINANCE, gl.UNSIGNED_BYTE, maskCanvas);
+  }
+
+  function updateDirtTexture() {
+    if (!gl || !dirtTexture) return;
+    const total = GRID_RES * GRID_RES;
+    for (let i = 0; i < total; i++) {
+      dirtBytes[i] = Math.min(255, Math.floor((dirtGrid[i] / 0.18) * 255));
+    }
+    gl.bindTexture(gl.TEXTURE_2D, dirtTexture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, GRID_RES, GRID_RES, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, dirtBytes);
   }
 
   // Record cleaned segment with normalized room coords [0..1] and timestamp
@@ -454,53 +575,178 @@
     updateMaskTexture();
   }
 
-  // Update Shop & Upgrades UI
-  function updateUpgradesAndShopUI() {
-    const speedCost = getSpeedCost();
-    const capacityCost = getCapacityCost();
-    const speedPct = (getSpeedRatio() * 100).toFixed(1);
-    const capMult = getCapacityMult().toFixed(1);
-    const maxCap = getMaxVacuumCapacity().toFixed(2);
+  // Dynamic Shop Item Rendering & Updates
+  function initShopUI() {
+    if (!shopItemsContainer) return;
+    shopItemsContainer.innerHTML = '';
 
-    if (speedLevelDisplay) speedLevelDisplay.textContent = `Lvl ${Values.shops.dustShop.Speed.level}`;
-    if (speedCurrentDisplay) speedCurrentDisplay.textContent = `${speedPct}% / s`;
-    if (speedCostDisplay) speedCostDisplay.textContent = `${speedCost.toFixed(2)}g`;
-    if (buySpeedBtn) buySpeedBtn.disabled = (Values.storage.content < speedCost);
+    const keys = Object.keys(Values.shops.dustShop);
+    keys.forEach((key) => {
+      const upg = Values.shops.dustShop[key];
+      const itemEl = document.createElement('div');
+      itemEl.className = 'shop-item';
+      itemEl.id = `shop-item-${key}`;
+      itemEl.innerHTML = `
+        <div class="item-info">
+          <div class="item-title-row">
+            <span class="item-name">${upg.name || key}</span>
+            <span class="item-level" id="shop-lvl-${key}">Lvl ${upg.level}</span>
+          </div>
+          <p class="item-desc" id="shop-desc-${key}">${upg.getDesc ? upg.getDesc(upg) : ''}</p>
+          <div class="item-stat-row">
+            <span class="stat-current">Current: <strong id="shop-stat-${key}">${upg.getStat ? upg.getStat(upg) : ''}</strong></span>
+          </div>
+        </div>
+        <button class="buy-btn" id="shop-buy-${key}" title="Buy ${upg.name || key}">
+          <span class="buy-label">Buy</span>
+          <span class="buy-cost" id="shop-cost-${key}">0.50g</span>
+        </button>
+      `;
 
-    if (capacityLevelDisplay) capacityLevelDisplay.textContent = `Lvl ${Values.shops.dustShop.CapacityMult.level}`;
-    if (capacityCurrentDisplay) capacityCurrentDisplay.textContent = `${maxCap}g (${capMult}x)`;
-    if (capacityCostDisplay) capacityCostDisplay.textContent = `${capacityCost.toFixed(2)}g`;
-    if (buyCapacityBtn) buyCapacityBtn.disabled = (Values.storage.content < capacityCost);
+      const buyBtn = itemEl.querySelector(`#shop-buy-${key}`);
+      buyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        buyUpgrade(key);
+      });
 
-    if (shopStoredDust) shopStoredDust.textContent = `${Values.storage.content.toFixed(2)}g`;
+      shopItemsContainer.appendChild(itemEl);
+    });
   }
 
-  // Update Robot Storage and Main Storage UI
+  function buyUpgrade(key) {
+    const upg = Values.shops.dustShop[key];
+    if (!upg) return;
+    if (upg.isUnlock && upg.level >= 1) return; // already unlocked (no multiple levels)
+
+    const cost = Values.getUpgradeCost(key);
+    // Dust shop strictly uses DUST only - dirt cannot be used to buy upgrades!
+    if ((Values.storage.dust || 0) >= cost) {
+      Values.storage.dust -= cost;
+      Values.shops.dustShop[key].level++;
+
+      // When Dirt upgrade is bought, unlocked once and starts generation up to 100%!
+      if (key === 'Dirt') {
+        isDirtGenerating = true;
+        const remainingCap = MAX_SCREEN_DIRT - currentScreenDirtGrams;
+        if (remainingCap > 0.5) {
+          spawnDirtZoneSeed();
+          spawnDirtZoneSeed();
+        }
+      }
+
+      updateUpgradesAndShopUI();
+      updateCapacityAndStorageUI();
+      if (window.soundEngine) window.soundEngine.playPurchaseSound();
+    }
+  }
+
+  // Update Shop & Upgrades UI with dynamic values, text & descriptions
+  function updateUpgradesAndShopUI() {
+    const keys = Object.keys(Values.shops.dustShop);
+    keys.forEach((key) => {
+      const upg = Values.shops.dustShop[key];
+      const cost = Values.getUpgradeCost(key);
+      const isMaxed = upg.isUnlock ? (upg.level >= 1) : false;
+
+      const lvlEl = document.getElementById(`shop-lvl-${key}`);
+      if (lvlEl) {
+        lvlEl.textContent = upg.isUnlock ? (isMaxed ? 'Unlocked' : 'Locked') : `Lvl ${upg.level}`;
+      }
+
+      const descEl = document.getElementById(`shop-desc-${key}`);
+      if (descEl && upg.getDesc) descEl.textContent = upg.getDesc(upg);
+
+      const statEl = document.getElementById(`shop-stat-${key}`);
+      if (statEl && upg.getStat) statEl.textContent = upg.getStat(upg);
+
+      const costEl = document.getElementById(`shop-cost-${key}`);
+      if (costEl) {
+        costEl.textContent = isMaxed ? 'OWNED' : `${cost.toFixed(2)}g`;
+      }
+
+      const buyBtn = document.getElementById(`shop-buy-${key}`);
+      if (buyBtn) {
+        const buyLabel = buyBtn.querySelector('.buy-label');
+        if (isMaxed) {
+          buyBtn.disabled = true;
+          buyBtn.classList.add('unlocked-btn');
+          if (buyLabel) buyLabel.textContent = 'Unlocked';
+        } else {
+          // You can't buy in the dust shop with dirt - strictly checks stored dust!
+          buyBtn.disabled = ((Values.storage.dust || 0) < cost);
+          buyBtn.classList.remove('unlocked-btn');
+          if (buyLabel) buyLabel.textContent = 'Buy';
+        }
+      }
+    });
+
+    if (shopStoredDust) {
+      shopStoredDust.textContent = `${(Values.storage.dust || 0).toFixed(2)}g`;
+    }
+  }
+
+  // Update Robot Storage (Grey for Dust, Brown for Dirt) and Main Storage UI
   function updateCapacityAndStorageUI() {
     const maxCapacity = getMaxVacuumCapacity();
-    const isFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
+    const storedDust = Values.vacuum.storedDust || 0;
+    const storedDirt = Values.vacuum.storedDirt || 0;
+    const totalStored = storedDust + storedDirt;
+    Values.vacuum.stored = totalStored;
 
-    // Robot Storage (Bottom-Left, like stored dust)
+    const isFull = (totalStored >= maxCapacity - 0.0001);
+
+    // Robot Storage (Bottom-Left)
     if (robotStorageCard && robotStorageValue) {
       if (isFull) {
         robotStorageCard.classList.add('full');
         robotStorageValue.textContent = `FULL! (${maxCapacity.toFixed(2)}g)`;
       } else {
         robotStorageCard.classList.remove('full');
-        robotStorageValue.textContent = `${Values.vacuum.stored.toFixed(2)} / ${maxCapacity.toFixed(2)}g`;
+        robotStorageValue.textContent = `${totalStored.toFixed(2)} / ${maxCapacity.toFixed(2)}g`;
       }
     }
 
-    if (robotStorageFill) {
-      const capPct = Math.min(100, (Values.vacuum.stored / maxCapacity) * 100);
-      robotStorageFill.style.height = `${capPct.toFixed(1)}%`;
+    if (robotStorageFillDust && robotStorageFillDirt) {
+      const dustPct = Math.min(100, (storedDust / maxCapacity) * 100);
+      const dirtPct = Math.min(100 - dustPct, (storedDirt / maxCapacity) * 100);
+
+      robotStorageFillDust.style.height = `${dustPct.toFixed(1)}%`;
+      robotStorageFillDirt.style.bottom = `${dustPct.toFixed(1)}%`;
+      robotStorageFillDirt.style.height = `${dirtPct.toFixed(1)}%`;
     }
 
-    // Main Storage (Right)
-    if (storageFill && storageValue) {
-      const storagePct = Math.min(100, (Values.storage.content / Values.storage.max) * 100);
-      storageFill.style.height = `${storagePct.toFixed(1)}%`;
-      storageValue.textContent = `${Values.storage.content.toFixed(1)} / ${Values.storage.max.toFixed(0)}g`;
+    if (robotDustText) robotDustText.textContent = `${storedDust.toFixed(2)}g`;
+    if (robotDirtText) robotDirtText.textContent = `${storedDirt.toFixed(2)}g`;
+
+    // Separate Infinite Storage Indicators: Dust & Dirt (Center Right)
+    if (storageDustValue) {
+      storageDustValue.textContent = `${(Values.storage.dust || 0).toFixed(1)}g`;
+    }
+    if (storageDirtValue) {
+      storageDirtValue.textContent = `${(Values.storage.dirt || 0).toFixed(1)}g`;
+    }
+
+    if (storageDustCard) {
+      const isDustTransferActive = isSpaceHeld && (storedDust > 0.0001);
+      storageDustCard.classList.toggle('receiving', isDustTransferActive);
+    }
+    if (storageDirtCard) {
+      const isDirtTransferActive = isSpaceHeld && (storedDirt > 0.0001);
+      storageDirtCard.classList.toggle('receiving', isDirtTransferActive);
+    }
+
+    // Dirt on Screen Indicator (Top Right)
+    if (dirtIndicator) {
+      if (currentScreenDirtGrams >= MAX_SCREEN_DIRT - 0.05) {
+        dirtIndicator.textContent = `Dirt: 100.0 / 100g (MAX)`;
+      } else if (isDirtGenerating) {
+        dirtIndicator.textContent = `Dirt: ${currentScreenDirtGrams.toFixed(1)} / 100g (Growing)`;
+      } else {
+        dirtIndicator.textContent = `Dirt: ${currentScreenDirtGrams.toFixed(1)} / 100g`;
+      }
+    }
+    if (dirtBadge) {
+      dirtBadge.classList.toggle('active', currentScreenDirtGrams > 0.1);
     }
 
     updateUpgradesAndShopUI();
@@ -571,30 +817,260 @@
     }
   }
 
-  function buySpeedUpgrade() {
-    const cost = getSpeedCost();
-    if (Values.storage.content >= cost) {
-      Values.storage.content -= cost;
-      Values.shops.dustShop.Speed.level++;
-      updateUpgradesAndShopUI();
-      updateCapacityAndStorageUI();
-      if (window.soundEngine) window.soundEngine.playPurchaseSound();
-    }
+  // 2D Hash & Smooth Value Noise for procedural dirt patches
+  function hash2D(x, y) {
+    const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+    return n - Math.floor(n);
   }
 
-  function buyCapacityUpgrade() {
-    const cost = getCapacityCost();
-    if (Values.storage.content >= cost) {
-      Values.storage.content -= cost;
-      Values.shops.dustShop.CapacityMult.level++;
-      updateUpgradesAndShopUI();
+  function smoothNoise2D(x, y) {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    const fx = x - ix;
+    const fy = y - iy;
+
+    const sx = fx * fx * (3.0 - 2.0 * fx);
+    const sy = fy * fy * (3.0 - 2.0 * fy);
+
+    const n00 = hash2D(ix, iy);
+    const n10 = hash2D(ix + 1, iy);
+    const n01 = hash2D(ix, iy + 1);
+    const n11 = hash2D(ix + 1, iy + 1);
+
+    const nx0 = n00 * (1.0 - sx) + n10 * sx;
+    const nx1 = n01 * (1.0 - sx) + n11 * sx;
+    return nx0 * (1.0 - sy) + nx1 * sy;
+  }
+
+  // Spawns a new seed for an organic dirt zone that will grow
+  function spawnDirtZoneSeed() {
+    if (currentScreenDirtGrams >= MAX_SCREEN_DIRT - 0.5) return false;
+    const isDirtUnlocked = Values.shops.dustShop.Dirt ? (Values.shops.dustShop.Dirt.level > 0) : false;
+    if (!isDirtUnlocked) return false;
+
+    const MAX_ACTIVE_ZONES = 14;
+    if (dirtZones.length >= MAX_ACTIVE_ZONES) return false;
+
+    const vx = ((cleanerPos.x - roomX) / roomSize) * GRID_RES;
+    const vy = ((cleanerPos.y - roomY) / roomSize) * GRID_RES;
+    const minSafeDistCleaner = (cleanerRadius / roomSize) * GRID_RES + 12;
+
+    // Pick candidate center away from edges, vacuum, and other zones
+    // Uses smoothNoise2D with dirtNoiseSeed to find new organic clustering locations
+    let bestX = 18 + Math.floor(Math.random() * (GRID_RES - 36));
+    let bestY = 18 + Math.floor(Math.random() * (GRID_RES - 36));
+    let bestScore = -999;
+
+    for (let attempts = 0; attempts < 16; attempts++) {
+      const cx = 18 + Math.floor(Math.random() * (GRID_RES - 36));
+      const cy = 18 + Math.floor(Math.random() * (GRID_RES - 36));
+      const distToVacuum = Math.hypot(cx - vx, cy - vy);
+      if (distToVacuum < minSafeDistCleaner) continue;
+
+      let tooClose = false;
+      for (let i = 0; i < dirtZones.length; i++) {
+        if (Math.hypot(cx - dirtZones[i].x, cy - dirtZones[i].y) < (dirtZones[i].currentRadius + 6)) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (tooClose) continue;
+
+      // Score candidate location using current dirtNoiseSeed
+      const noiseScore = smoothNoise2D((cx + dirtNoiseSeed) * 0.08, (cy + dirtNoiseSeed) * 0.08);
+      if (noiseScore > bestScore) {
+        bestScore = noiseScore;
+        bestX = cx;
+        bestY = cy;
+      }
+    }
+
+    if (bestScore === -999) return false;
+    const cx = bestX;
+    const cy = bestY;
+
+    // Target max radius and grams for this zone:
+    // Variety of shapes: small teardrops/beans, medium rounded blobs, and larger amoebas
+    const typeRoll = Math.random();
+    let maxRadius, maxGrams;
+    if (typeRoll < 0.3) {
+      maxRadius = 3.5 + Math.random() * 2.5; // 3.5 to 6 cells
+      maxGrams = 1.5 + Math.random() * 2.5;  // 1.5g to 4g
+    } else if (typeRoll < 0.75) {
+      maxRadius = 6.0 + Math.random() * 4.0; // 6 to 10 cells
+      maxGrams = 4.0 + Math.random() * 4.0;  // 4g to 8g
+    } else {
+      maxRadius = 10.0 + Math.random() * 4.5; // 10 to 14.5 cells
+      maxGrams = 8.0 + Math.random() * 6.0;   // 8g to 14g
+    }
+
+    const zoneSeed = Math.random() * 1000 + dirtNoiseSeed;
+    const zone = {
+      id: Math.random(),
+      x: cx,
+      y: cy,
+      startRadius: 1.5,
+      currentRadius: 1.5,
+      maxRadius: maxRadius,
+      currentGrams: 0.15,
+      maxGrams: maxGrams,
+      growthRate: 0.40 + Math.random() * 0.35, // fixed natural organic growth rate (no speed upgrade)
+      aspect: 0.70 + Math.random() * 0.58, // elongation (egg / bean / oval)
+      angle: (Math.random() * Math.PI) + (dirtNoiseSeed % Math.PI),
+      wobbleFreq: 2 + Math.floor(Math.random() * 3), // 2, 3, or 4 lobes
+      wobbleAmp: 0.12 + Math.random() * 0.16, // organic edge deformation
+      phase: (Math.random() * Math.PI * 2) + (dirtNoiseSeed % 6.28),
+      seed: zoneSeed,
+      isFullyGrown: false
+    };
+
+    dirtZones.push(zone);
+    return true;
+  }
+
+  // Updates and grows active organic dirt zones over time
+  // "Make that dirt don't generate constantly, but if under 70% of the max dirt then it generate up to 100%"
+  function updateDirtZones(dt, now) {
+    const isDirtUnlocked = Values.shops.dustShop.Dirt ? (Values.shops.dustShop.Dirt.level > 0) : false;
+    if (!isDirtUnlocked) return;
+
+    // Check generation trigger:
+    // If under 70% of max dirt (70g), trigger wave generation up to 100% (100g)
+    const DIRT_GEN_THRESHOLD = MAX_SCREEN_DIRT * 0.70; // 70g
+
+    if (currentScreenDirtGrams < DIRT_GEN_THRESHOLD) {
+      isDirtGenerating = true;
+    }
+
+    // When dirt reaches 100% (100g), stop generating wave and randomize noise seed
+    if (currentScreenDirtGrams >= MAX_SCREEN_DIRT - 0.05) {
+      if (isDirtGenerating) {
+        isDirtGenerating = false;
+        randomizeDirtNoiseSeed();
+      }
+    }
+
+    // 1. Prune dead zones whose cells have been completely vacuumed
+    for (let i = dirtZones.length - 1; i >= 0; i--) {
+      const z = dirtZones[i];
+      let zoneRemainingDirt = 0;
+      const checkR = Math.ceil(z.currentRadius + 2);
+      const minX = Math.max(0, Math.floor(z.x - checkR));
+      const maxX = Math.min(GRID_RES - 1, Math.ceil(z.x + checkR));
+      const minY = Math.max(0, Math.floor(z.y - checkR));
+      const maxY = Math.min(GRID_RES - 1, Math.ceil(z.y + checkR));
+
+      for (let cy = minY; cy <= maxY; cy++) {
+        for (let cx = minX; cx <= maxX; cx++) {
+          zoneRemainingDirt += dirtGrid[cy * GRID_RES + cx];
+        }
+      }
+
+      if (zoneRemainingDirt < 0.02 && z.currentGrams > 0.3) {
+        dirtZones.splice(i, 1);
+      }
+    }
+
+    // If NOT actively generating a wave (i.e. sitting between 70% and 100%), do not generate/grow
+    if (!isDirtGenerating) return;
+
+    // 2. Spawn new seeds if room under cap and not enough active zones
+    const availableCap = Math.max(0, MAX_SCREEN_DIRT - currentScreenDirtGrams);
+    const MAX_ACTIVE_ZONES = 14;
+    if (availableCap > 0.5 && dirtZones.length < MAX_ACTIVE_ZONES) {
+      if (now - lastDirtZoneSpawn > 2000 || dirtZones.length === 0) {
+        lastDirtZoneSpawn = now;
+        spawnDirtZoneSeed();
+      }
+    }
+
+    // 3. Grow active dirt zones up to 100%
+    if (availableCap <= 0.01) return;
+
+    let totalGramsAdded = 0;
+    let anyZoneGrew = false;
+
+    for (let i = 0; i < dirtZones.length; i++) {
+      const z = dirtZones[i];
+      if (z.isFullyGrown || z.currentGrams >= z.maxGrams) continue;
+      if (currentScreenDirtGrams + totalGramsAdded >= MAX_SCREEN_DIRT) break;
+
+      const remainingCapThisZone = Math.max(0, MAX_SCREEN_DIRT - (currentScreenDirtGrams + totalGramsAdded));
+      const growAmount = Math.min(z.growthRate * dt, remainingCapThisZone);
+      if (growAmount <= 0.0001) continue;
+
+      z.currentGrams += growAmount;
+      const growthProgress = Math.min(1.0, z.currentGrams / z.maxGrams);
+      z.currentRadius = z.startRadius + (z.maxRadius - z.startRadius) * Math.pow(growthProgress, 0.7);
+      if (growthProgress >= 1.0) {
+        z.isFullyGrown = true;
+      }
+
+      // Stamp / expand zone into dirtGrid
+      const cosA = Math.cos(z.angle);
+      const sinA = Math.sin(z.angle);
+      const boundR = Math.ceil(z.currentRadius * 1.5 + 2);
+
+      const minX = Math.max(0, Math.floor(z.x - boundR));
+      const maxX = Math.min(GRID_RES - 1, Math.ceil(z.x + boundR));
+      const minY = Math.max(0, Math.floor(z.y - boundR));
+      const maxY = Math.min(GRID_RES - 1, Math.ceil(z.y + boundR));
+
+      for (let cy = minY; cy <= maxY; cy++) {
+        for (let cx = minX; cx <= maxX; cx++) {
+          const dx = cx - z.x;
+          const dy = cy - z.y;
+          const rx = (dx * cosA - dy * sinA) / z.aspect;
+          const ry = (dx * sinA + dy * cosA);
+          const d = Math.hypot(rx, ry);
+
+          const theta = Math.atan2(ry, rx);
+          const rPerimeter = z.currentRadius * (1.0 + z.wobbleAmp * Math.sin(theta * z.wobbleFreq + z.phase));
+
+          if (d <= rPerimeter) {
+            // Check if cell is currently right under the vacuum cleaner circle:
+            const cellWorldX = roomX + (cx / GRID_RES) * roomSize;
+            const cellWorldY = roomY + (cy / GRID_RES) * roomSize;
+            const distToCleaner = Math.hypot(cellWorldX - cleanerPos.x, cellWorldY - cleanerPos.y);
+            if (distToCleaner <= cleanerRadius + 2.0) {
+              continue; // never spawn dirt right under the vacuum!
+            }
+
+            const normDist = d / rPerimeter;
+            const density = Math.pow(Math.max(0.0, 1.0 - normDist * normDist), 0.65);
+            const targetVal = 0.20 * density;
+
+            if (targetVal > dirtGrid[cy * GRID_RES + cx]) {
+              const capLeft = Math.max(0, MAX_SCREEN_DIRT - (currentScreenDirtGrams + totalGramsAdded));
+              const diff = Math.min(targetVal - dirtGrid[cy * GRID_RES + cx], capLeft);
+              if (diff > 0.0001) {
+                dirtGrid[cy * GRID_RES + cx] += diff;
+                totalGramsAdded += diff;
+                anyZoneGrew = true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (anyZoneGrew && totalGramsAdded > 0) {
+      currentScreenDirtGrams = Math.min(MAX_SCREEN_DIRT, currentScreenDirtGrams + totalGramsAdded);
+      dirtTextureNeedsUpdate = true;
       updateCapacityAndStorageUI();
-      if (window.soundEngine) window.soundEngine.playPurchaseSound();
+
+      // Check if this growth step brought dirt to 100%:
+      if (currentScreenDirtGrams >= MAX_SCREEN_DIRT - 0.05) {
+        if (isDirtGenerating) {
+          isDirtGenerating = false;
+          randomizeDirtNoiseSeed();
+        }
+      }
     }
   }
 
   // --- Particle FX (Dust Motes sucked into vacuum) ---
-  function spawnDustParticles(x, y, count = 1) {
+  function spawnDustParticles(x, y, count = 1, isDirt = false) {
     if (particles.length >= MAX_PARTICLES) return;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -605,7 +1081,80 @@
         size: 1.0 + Math.random() * 1.5,
         alpha: 0.8 + Math.random() * 0.2,
         speed: 0.12 + Math.random() * 0.1,
-        color: Math.random() > 0.4 ? 'rgba(220, 220, 225,' : 'rgba(165, 165, 175,'
+        color: isDirt
+          ? (Math.random() > 0.4 ? 'rgba(184, 98, 74,' : 'rgba(138, 64, 45,')
+          : (Math.random() > 0.4 ? 'rgba(220, 220, 225,' : 'rgba(165, 165, 175,')
+      });
+    }
+  }
+
+  // Coordinate of separate storage indicators at center right (Dust or Dirt)
+  function getStorageTargetCoord(isDirt = false) {
+    const cardId = isDirt ? 'storage-dirt-card' : 'storage-dust-card';
+    const card = document.getElementById(cardId) || document.querySelector(isDirt ? '.dirt-storage-card' : '.dust-storage-card');
+    if (card) {
+      const rect = card.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width * 0.5,
+        y: rect.top + rect.height * 0.5
+      };
+    }
+    return { x: width - 60, y: isDirt ? (height * 0.5 + 40) : (height * 0.5 - 40) };
+  }
+
+  // Transfer particles that fly from the bot to separate storage indicators at center right
+  function spawnTransferParticles(count = 2, isDirt = false) {
+    const target = getStorageTargetCoord(isDirt);
+    for (let i = 0; i < count; i++) {
+      if (transferParticles.length >= MAX_TRANSFER_PARTICLES) break;
+
+      const angle = Math.random() * Math.PI * 2;
+      const startDist = Math.random() * cleanerRadius * 0.75;
+      const startX = cleanerPos.x + Math.cos(angle) * startDist;
+      const startY = cleanerPos.y + Math.sin(angle) * startDist;
+
+      const targetX = target.x + (Math.random() - 0.5) * 16;
+      const targetY = target.y + (Math.random() - 0.5) * 12;
+
+      const midX = (startX + targetX) * 0.5;
+      const dist = Math.hypot(targetX - startX, targetY - startY);
+      const arcHeight = Math.min(130, Math.max(35, dist * 0.22));
+      const midY = Math.min(startY, targetY) - arcHeight + (Math.random() - 0.5) * 16;
+
+      transferParticles.push({
+        x: startX,
+        y: startY,
+        prevX: startX,
+        prevY: startY,
+        p0x: startX,
+        p0y: startY,
+        p1x: midX,
+        p1y: midY,
+        targetOffsetX: (Math.random() - 0.5) * 16,
+        targetOffsetY: (Math.random() - 0.5) * 12,
+        t: 0,
+        speed: 0.024 + Math.random() * 0.016,
+        size: 2.2 + Math.random() * 1.5,
+        alpha: 0.95,
+        isDirt: isDirt,
+        color: isDirt
+          ? (Math.random() > 0.35 ? '184, 98, 74' : '140, 68, 48')
+          : (Math.random() > 0.35 ? '190, 195, 205' : '225, 230, 240')
+      });
+    }
+  }
+
+  function spawnStorageSplash(x, y, isDirt = false) {
+    if (splashParticles.length >= MAX_SPLASH_PARTICLES) return;
+    for (let i = 0; i < 2; i++) {
+      splashParticles.push({
+        x: x + (Math.random() - 0.5) * 10,
+        y: y + (Math.random() - 0.5) * 4,
+        vx: (Math.random() - 0.5) * 1.2,
+        vy: -0.5 - Math.random() * 1.2,
+        alpha: 0.85,
+        size: 1.0 + Math.random() * 1.2,
+        color: isDirt ? '184, 98, 74' : '220, 225, 235'
       });
     }
   }
@@ -656,7 +1205,7 @@
     }
 
     // Indicator if storing dust (transfer active)
-    const isStoringActive = isSpaceHeld && (Values.vacuum.stored > 0.0001) && (Values.storage.content < Values.storage.max);
+    const isStoringActive = isSpaceHeld && (Values.vacuum.stored > 0.0001);
     if (isStoringActive) {
       overlayCtx.save();
       overlayCtx.font = '700 11px Outfit, sans-serif';
@@ -666,7 +1215,7 @@
       overlayCtx.restore();
     }
 
-    // Update and draw particles
+    // Update and draw intake dust motes
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.x += (cleanerPos.x - p.x) * p.speed;
@@ -682,6 +1231,60 @@
       overlayCtx.fillStyle = `${p.color} ${p.alpha})`;
       overlayCtx.beginPath();
       overlayCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      overlayCtx.fill();
+    }
+
+    // Update and draw storage transfer particles (from bot to separate storage indicators at center right)
+    for (let i = transferParticles.length - 1; i >= 0; i--) {
+      const p = transferParticles[i];
+      p.t += p.speed;
+      p.prevX = p.x;
+      p.prevY = p.y;
+
+      const currentTarget = getStorageTargetCoord(p.isDirt);
+      const destX = currentTarget.x + (p.targetOffsetX || 0);
+      const destY = currentTarget.y + (p.targetOffsetY || 0);
+
+      const t = p.t;
+      const invT = 1.0 - t;
+      p.x = invT * invT * p.p0x + 2.0 * invT * t * p.p1x + t * t * destX;
+      p.y = invT * invT * p.p0y + 2.0 * invT * t * p.p1y + t * t * destY;
+
+      if (p.t >= 1.0) {
+        spawnStorageSplash(destX, destY, p.isDirt);
+        transferParticles.splice(i, 1);
+        continue;
+      }
+
+      overlayCtx.save();
+      overlayCtx.strokeStyle = `rgba(${p.color}, ${p.alpha * 0.55})`;
+      overlayCtx.lineWidth = p.size;
+      overlayCtx.lineCap = 'round';
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(p.prevX, p.prevY);
+      overlayCtx.lineTo(p.x, p.y);
+      overlayCtx.stroke();
+
+      overlayCtx.fillStyle = `rgba(${p.color}, ${p.alpha})`;
+      overlayCtx.beginPath();
+      overlayCtx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.restore();
+    }
+
+    // Splash particles at destination
+    for (let i = splashParticles.length - 1; i >= 0; i--) {
+      const sp = splashParticles[i];
+      sp.x += sp.vx;
+      sp.y += sp.vy;
+      sp.alpha -= 0.08;
+      if (sp.alpha <= 0) {
+        splashParticles.splice(i, 1);
+        continue;
+      }
+      overlayCtx.fillStyle = `rgba(${sp.color || '220, 225, 235'}, ${sp.alpha})`;
+      overlayCtx.beginPath();
+      overlayCtx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
       overlayCtx.fill();
     }
   }
@@ -710,12 +1313,29 @@
     noiseOffset = [Math.random() * 100.0, Math.random() * 100.0];
     reachedMilestones.clear();
     particles.length = 0;
+    transferParticles.length = 0;
+    splashParticles.length = 0;
     cleanTrail = [];
     roomGrid.fill(0);
+    dirtGrid.fill(0);
+    dirtBytes.fill(0);
+    dirtZones = [];
+    currentScreenDirtGrams = 0.0;
+    dirtTextureNeedsUpdate = true;
+    isDirtGenerating = false;
+    randomizeDirtNoiseSeed();
+    updateDirtTexture();
+
     Values.vacuum.stored = 0.0;
-    Values.storage.content = 0.0;
-    Values.shops.dustShop.Speed.level = 0;
-    Values.shops.dustShop.CapacityMult.level = 0;
+    Values.vacuum.storedDust = 0.0;
+    Values.vacuum.storedDirt = 0.0;
+    Values.storage.dust = 0.0;
+    Values.storage.dirt = 0.0;
+
+    Object.keys(Values.shops.dustShop).forEach((k) => {
+      Values.shops.dustShop[k].level = 0;
+    });
+
     isSpaceHeld = false;
     hadPlayedFullAlert = false;
 
@@ -742,29 +1362,55 @@
     const maxCapacity = getMaxVacuumCapacity();
     const isVacuumFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
 
-    // Storing dust into Storage Tank:
+    // Storing dust and dirt into their separate Infinite Storages:
     // "you should keep pressing space to store"
-    const isStoringActive = isSpaceHeld && (Values.vacuum.stored > 0.0001) && (Values.storage.content < Values.storage.max);
+    const isStoringActive = isSpaceHeld && (Values.vacuum.stored > 0.0001);
     if (isStoringActive) {
-      const transfer = Math.min(Values.vacuum.stored, Values.vacuum.storeRate * dt);
-      const actualTransfer = Math.min(transfer, Values.storage.max - Values.storage.content);
+      const storeRate = Values.getEffectiveStoreRate ? Values.getEffectiveStoreRate() : (Values.vacuum.storeRate || 0.1);
+      const transferTotal = Math.min(Values.vacuum.stored, storeRate * dt);
 
-      Values.vacuum.stored -= actualTransfer;
-      Values.storage.content += actualTransfer;
+      let transferDust = 0;
+      let transferDirt = 0;
+      if (Values.vacuum.stored > 0.00001) {
+        const dustRatio = (Values.vacuum.storedDust || 0) / Values.vacuum.stored;
+        transferDust = transferTotal * dustRatio;
+        transferDirt = transferTotal * (1.0 - dustRatio);
+      } else {
+        transferDust = transferTotal;
+      }
+
+      Values.vacuum.storedDust = Math.max(0, (Values.vacuum.storedDust || 0) - transferDust);
+      Values.vacuum.storedDirt = Math.max(0, (Values.vacuum.storedDirt || 0) - transferDirt);
+      Values.vacuum.stored = Values.vacuum.storedDust + Values.vacuum.storedDirt;
+
+      // Stored separately:
+      Values.storage.dust = (Values.storage.dust || 0) + transferDust;
+      Values.storage.dirt = (Values.storage.dirt || 0) + transferDirt;
 
       if (Values.vacuum.stored < 0.0001) {
         Values.vacuum.stored = 0.0;
+        Values.vacuum.storedDust = 0.0;
+        Values.vacuum.storedDirt = 0.0;
         hadPlayedFullAlert = false;
-      }
-
-      if (Values.storage.content >= Values.storage.max) {
-        Values.storage.content = Values.storage.max;
       }
 
       if (Math.random() < 0.25 && window.soundEngine) {
         window.soundEngine.playStoreBlip();
       }
+
+      // Spawn transfer particles streaming from bot to their separate storage indicators
+      if (transferDust > 0.0001) {
+        spawnTransferParticles(2, false); // flies to Dust Storage
+      }
+      if (transferDirt > 0.0001) {
+        spawnTransferParticles(2, true);  // flies to Dirt Storage
+      }
     }
+
+    // Update and grow organic dirt zones over time
+    // "Make dirt not dirt patch but more dirt zones that grow"
+    // "dirt is capped at 100g on the screen (when under 100, more dirt appear but never exeed 100g)"
+    updateDirtZones(dt, now);
 
     // Vacuum moves ONLY when left click is held down AND NOT storing:
     // "make that you cant move while storing"
@@ -774,7 +1420,7 @@
       const dist = Math.hypot(dx, dy);
 
       if (dist > 0.01) {
-        // Speed: (1.0% + speedLevel * 0.1%) of screen dimension per second
+        // Speed: base speed * effective speed multiplier
         const screenDimension = Math.min(width, height);
         const speedPxPerSec = screenDimension * getSpeedRatio();
         const step = Math.min(dist, speedPxPerSec * dt);
@@ -790,7 +1436,6 @@
 
         if (moveDist > 0.005) {
           // Check how many cells under the cleaner circle are DUSTY vs ALREADY CLEAN:
-          // Uses the same model as the dust cleared indicator!
           const gx = ((cleanerPos.x - roomX) / roomSize) * GRID_RES;
           const gy = ((cleanerPos.y - roomY) / roomSize) * GRID_RES;
           const gr = (cleanerRadius / roomSize) * GRID_RES;
@@ -801,12 +1446,16 @@
           const maxY = Math.min(GRID_RES - 1, Math.ceil(gy + gr));
 
           let dustyCellsCleared = 0;
+          let dirtCleanedGrams = 0;
+          let remainingCapacity = Math.max(0, maxCapacity - Values.vacuum.stored);
 
           for (let cy = minY; cy <= maxY; cy++) {
             for (let cx = minX; cx <= maxX; cx++) {
               const d2 = (cx - gx) * (cx - gx) + (cy - gy) * (cy - gy);
               if (d2 <= gr * gr) {
                 const idx = cy * GRID_RES + cx;
+
+                // 1. Dust cleaning
                 const timeCleaned = roomGrid[idx];
                 const isCellDusty = (timeCleaned === 0 || now - timeCleaned >= DUST_REAPPEAR_DELAY);
 
@@ -819,6 +1468,20 @@
                   // Already clean cell: refresh timeCleaned so it never reappears under the vacuum!
                   roomGrid[idx] = now;
                 }
+
+                // 2. Dirt cleaning (if present in cell and capacity remains)
+                if (dirtGrid[idx] > 0 && !isVacuumFull && remainingCapacity > 0.0001) {
+                  const cellDirt = dirtGrid[idx];
+                  const take = Math.min(cellDirt, remainingCapacity);
+                  dirtGrid[idx] -= take;
+                  dirtCleanedGrams += take;
+                  remainingCapacity -= take;
+                  currentScreenDirtGrams = Math.max(0, currentScreenDirtGrams - take);
+                  dirtTextureNeedsUpdate = true;
+                  if (currentScreenDirtGrams < MAX_SCREEN_DIRT * 0.70) {
+                    isDirtGenerating = true; // triggered under 70%
+                  }
+                }
               }
             }
           }
@@ -827,12 +1490,20 @@
             // Record visual clean segment in trail
             recordCleanSegment(prevCleanerPos.x, prevCleanerPos.y, cleanerPos.x, cleanerPos.y, cleanerRadius, now);
 
-            if (dustyCellsCleared > 0) {
-              // Gain dust strictly for newly cleared dusty cells!
-              const dustGained = dustyCellsCleared * CELL_DUST;
-              Values.vacuum.stored = Math.min(maxCapacity, Values.vacuum.stored + dustGained);
+            // Compute dust collected
+            let dustGained = 0;
+            if (dustyCellsCleared > 0 && remainingCapacity > 0) {
+              const potentialDust = dustyCellsCleared * CELL_DUST;
+              dustGained = Math.min(potentialDust, remainingCapacity);
+            }
+
+            if (dustGained > 0 || dirtCleanedGrams > 0) {
+              Values.vacuum.storedDust = (Values.vacuum.storedDust || 0) + dustGained;
+              Values.vacuum.storedDirt = (Values.vacuum.storedDirt || 0) + dirtCleanedGrams;
+              Values.vacuum.stored = Values.vacuum.storedDust + Values.vacuum.storedDirt;
 
               if (Values.vacuum.stored >= maxCapacity - 0.0001) {
+                Values.vacuum.stored = maxCapacity;
                 if (!hadPlayedFullAlert) {
                   hadPlayedFullAlert = true;
                   if (window.soundEngine) window.soundEngine.playFullWarning();
@@ -841,17 +1512,26 @@
                 hadPlayedFullAlert = false;
               }
 
-              // Subtle dust motes & puff sound ONLY when collecting actual dust
-              if (Math.random() < 0.45) {
-                spawnDustParticles(cleanerPos.x, cleanerPos.y, 1);
-              }
-
-              if (window.soundEngine) {
-                window.soundEngine.updateMovement(0.75);
-                window.soundEngine.playDustPuff();
+              // Subtle motes & sound effects
+              if (dirtCleanedGrams > 0) {
+                if (Math.random() < 0.6) {
+                  spawnDustParticles(cleanerPos.x, cleanerPos.y, 2, true);
+                }
+                if (window.soundEngine) {
+                  window.soundEngine.updateMovement(0.85);
+                  window.soundEngine.playDirtPuff();
+                }
+              } else if (dustGained > 0) {
+                if (Math.random() < 0.45) {
+                  spawnDustParticles(cleanerPos.x, cleanerPos.y, 1, false);
+                }
+                if (window.soundEngine) {
+                  window.soundEngine.updateMovement(0.75);
+                  window.soundEngine.playDustPuff();
+                }
               }
             } else {
-              // Sweeping over already-clean carpet: ZERO dust collected!
+              // Sweeping over already-clean carpet: ZERO dust/dirt collected!
               if (window.soundEngine) {
                 window.soundEngine.updateMovement(0.2); // smooth gliding hum
               }
@@ -924,17 +1604,42 @@
     const uCleanerRadius = gl.getUniformLocation(shaderProgram, 'u_cleaner_radius');
     gl.uniform1f(uCleanerRadius, cleanerRadius * dpr);
 
+    // Cleaner storage fill uniforms (circle fills with grey for dust, brown for dirt)
+    const effectiveCap = getMaxVacuumCapacity();
+    const dustRatio = Math.min(1.0, Math.max(0.0, (Values.vacuum.storedDust || 0) / effectiveCap));
+    const dirtRatio = Math.min(1.0 - dustRatio, Math.max(0.0, (Values.vacuum.storedDirt || 0) / effectiveCap));
+    const isVacuumFullVal = (Values.vacuum.stored >= effectiveCap - 0.0001) ? 1.0 : 0.0;
+
+    const uDustFill = gl.getUniformLocation(shaderProgram, 'u_dust_fill');
+    gl.uniform1f(uDustFill, dustRatio);
+
+    const uDirtFill = gl.getUniformLocation(shaderProgram, 'u_dirt_fill');
+    gl.uniform1f(uDirtFill, dirtRatio);
+
+    const uCleanerIsFull = gl.getUniformLocation(shaderProgram, 'u_cleaner_is_full');
+    gl.uniform1f(uCleanerIsFull, isVacuumFullVal);
+
     const uNoiseOffset = gl.getUniformLocation(shaderProgram, 'u_noise_offset');
     gl.uniform2f(uNoiseOffset, noiseOffset[0], noiseOffset[1]);
 
     const uTime = gl.getUniformLocation(shaderProgram, 'u_time');
     gl.uniform1f(uTime, (time - startTime) * 0.001);
 
-    // Texture Unit 0: Mask
+    // Texture Unit 0: Dust Mask
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, maskTexture);
     const uMask = gl.getUniformLocation(shaderProgram, 'u_mask');
     gl.uniform1i(uMask, 0);
+
+    // Texture Unit 1: Dirt Mask
+    if (dirtTextureNeedsUpdate) {
+      updateDirtTexture();
+      dirtTextureNeedsUpdate = false;
+    }
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, dirtTexture);
+    const uDirtMask = gl.getUniformLocation(shaderProgram, 'u_dirt_mask');
+    gl.uniform1i(uDirtMask, 1);
 
     // Draw Quad
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -1069,20 +1774,6 @@
     });
   }
 
-  if (buySpeedBtn) {
-    buySpeedBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      buySpeedUpgrade();
-    });
-  }
-
-  if (buyCapacityBtn) {
-    buyCapacityBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      buyCapacityUpgrade();
-    });
-  }
-
   // Click outside shop modal to close
   window.addEventListener('click', (e) => {
     if (isShopOpen && shopModal && !shopModal.contains(e.target) && !shopBtn.contains(e.target)) {
@@ -1106,6 +1797,7 @@
     updateRoomGeometry();
     if (!initWebGL()) return;
     initMaskCanvas();
+    initShopUI();
     onResize();
 
     // Start vacuum in center of room

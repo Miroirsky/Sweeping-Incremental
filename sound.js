@@ -144,6 +144,30 @@ class SoundEngine {
     osc.stop(this.ctx.currentTime + 0.09);
   }
 
+  playDirtPuff() {
+    if (!this.isInitialized || this.isMuted) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140 + Math.random() * 40, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(70, this.ctx.currentTime + 0.12);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(320, this.ctx.currentTime);
+
+    gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.13);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.14);
+  }
+
   playFullWarning() {
     if (!this.isInitialized || this.isMuted) return;
     const osc = this.ctx.createOscillator();

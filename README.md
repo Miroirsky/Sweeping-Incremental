@@ -13,14 +13,40 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
   - Displayed at the **bottom left of the screen**, styled just like the stored dust display.
   - Thick vertical grey progress bar with white outlines, tick marks, and live numerical read-out (`0.00 / 0.50g`).
   - Warning full state turns red when full.
+- **Dynamic Circle Canister Fill**:
+  - The vacuum cleaner circle now **fills with grey from bottom to top like its storage** as it vacuums up dust.
+  - Features a crisp white outer rim and an internal meniscus level indicating exact canister fullness.
+  - When full, the rim and fill pulse red in warning.
+- **Separate Infinite Storage Indicators (Center-Right)**:
+  - Dust and dirt are **stored separately** in two dedicated infinite containers on the center-right:
+    - **Dust Storage**: Dedicated silver/grey HUD card (`DUST: X.Xg`).
+    - **Dirt Storage**: Dedicated terracotta/brown HUD card (`DIRT: X.Xg`).
+  - While holding Space, aerodynamic transfer particles route to their respective containers: silver dust particles flow into the Dust Storage, while warm terracotta dirt particles flow into the Dirt Storage.
+- **Dust Shop (Dust Currency Only)**:
+  - The Dust Shop accepts **DUST only**—you **cannot buy upgrades in the dust shop with dirt**.
+  - All upgrade prices and wallet balances strictly consume and display your stored dust.
 - **Vacuum Size**: Scaled to **1% of the screen** (`roomSize * 0.01`).
-- **Square Dust Shop & Menu**:
+- **Dynamic Upgrades & Live Shop Descriptions**:
   - Located at the bottom as a **sharp brown square button with light brown outlines and a grey circle icon** (0px border-radius).
   - Sharp square shop modal with white title (`DUST SHOP`).
-  - **Speed Upgrade**: Adds **+0.1% screen/s** to vacuum movement speed. Base cost: `0.5g`, scales by **1.5x** per level.
-  - **Capacity Mult Upgrade**: Adds **+0.1x** to the vacuum space multiplier (`0.5g * multiplier`). Base cost: `0.5g`, scales by **1.5x** per level.
-- **Hold-to-Store (Spacebar)**: **Keep pressing (hold) Space** to transfer dust from the vacuum into the storage tank at **0.1g/s** (on-screen button removed for clean HUD).
-- **10g Vertical Storage Progress Bar (Right)**: Displayed on the right with tick marks as a **thick vertical grey progress bar with white outlines and a transparent white background**.
+  - Upgrade cards and descriptions update dynamically with every purchase and value change.
+  - **Speed Upgrade**: Adds **+0.1% screen/s** movement speed. Cost: `0.5g * 1.5^lvl`.
+  - **Capacity Mult Upgrade**: Adds **+0.5x** to vacuum canister space multiplier. Cost: `0.5g * 1.5^lvl`.
+  - **Store Rate Upgrade**: Adds **+50%** transfer speed while holding Space. Cost: `0.5g * 1.5^lvl`.
+  - **Dirt Upgrade**: One-time permanent unlock. Cost: `0.5g`.
+- **Growing Dirt Zones Wave System**:
+  - Dirt does **not generate constantly**. When total dirt drops below **70% of max dirt (70g)**, it activates a generation wave that grows dirt **up to 100% (100g)**.
+  - While between 70g and 100g (when not in a wave), dirt generation remains paused until you clean it below 70g again.
+  - Every time dirt reaches the 100g cap, generation stops and the noise seed is randomized, ensuring the next wave sprouts in fresh locations with new shapes.
+  - Single-unlock upgrade in the shop with no multiple levels or spawn speed upgrades.
+  - Top-right HUD highlights dirt status (`(Growing)` when generating, `(MAX)` when capped).
+- **Dual Robot Storage (Grey for Dust, Brown for Dirt)**:
+  - Both the vacuum cleaner circle and the bottom-left storage progress bar display **grey for dust and brown for dirt**.
+  - The canister fills proportionally from bottom to top: grey on the bottom for dust, brown stacked on top for dirt.
+  - Detailed sub-breakdown tags show exact grams of dust vs dirt in both robot canister and infinite storage.
+  - Transfer particles and intake motes match the material color (grey for dust, earthy brown for dirt).
+  - Cleaning dirt triggers a distinct procedural suction thud sound (`playDirtPuff`).
+- **Hold-to-Store (Spacebar)**: **Keep pressing (hold) Space** to transfer dust from the vacuum into infinite storage at **0.1g/s** (on-screen button removed for clean HUD).
 - **10-Second Dust Reappearance**: Dust reappears **10 seconds after being vacuumed** (with a smooth settling fade).
 - **Protected Vacuum Spot**: Dust **never** reappears underneath the vacuum, even when stationary.
 - **Top-Right Minimalist HUD**: Displays `Dust Cleared: X.Xg [X.X%]` (synchronized with the 1 Kg room) and sound toggle.
@@ -34,13 +60,15 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
   - All numeric constants, base speeds, capacities, and upgrade configurations are stored in a single global `Values` variable:
     ```javascript
     Values = {
-      storage: { max: 10, content: 0 },
-      vacuum: { storeRate: 0.1, capacity: 0.5, stored: 0, speed: 0.01, size: 0.1 },
-      room: { dustCapacity: 1000 },
+      storage: { max: Infinity, dust: 0, dirt: 0 },
+      vacuum: { storeRate: 0.1, capacity: 0.5, stored: 0, storedDust: 0, storedDirt: 0, speed: 0.01, size: 0.1 },
+      room: { dustCapacity: 1000, dirtCapacity: 100 },
       shops: {
         dustShop: {
           Speed: { effect: 0.1, cost: 0.5, mult: 1.5, level: 0 },
-          CapacityMult: { effect: 0.5, cost: 0.5, mult: 1.5, level: 0 }
+          CapacityMult: { effect: 0.5, cost: 0.5, mult: 1.5, level: 0 },
+          StoreRate: { effect: 0.5, cost: 0.5, mult: 1.5, level: 0 },
+          Dirt: { isUnlock: true, maxLevel: 1, cost: 0.5, level: 0 }
         }
       }
     }
@@ -50,6 +78,6 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
 ## 🚀 How to Play
 Open `index.html` in any modern web browser.
 - **Hold Left Click**: Vacuum towards cursor.
-- **Keep Pressing (Hold) Space**: Store collected dust into the 10g vertical storage bar at 0.1g/s (movement locked while storing).
+- **Keep Pressing (Hold) Space**: Store collected dust into infinite storage at 0.1g/s (movement locked while storing).
 - **Click Shop (or press B)**: Open the square Dust Shop to purchase upgrades with stored dust.
 - **Press M**: Toggle audio.
