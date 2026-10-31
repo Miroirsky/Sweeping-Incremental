@@ -5,10 +5,16 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
 ## ✨ Features
 - **Hold-to-Move**: The vacuum moves **only while Left-Click is held down** (or touch on mobile).
 - **Movement Locked While Storing**: You **cannot move while storing** dust into the storage tank. Releasing Space resumes movement.
-- **True Dust Collection**:
-  - The cleaner now uses the **exact same grid model** as the dust cleared indicator.
-  - You **only get dust by cleaning uncleaned/reappeared dust**! Moving over already-cleaned carpet yields **0g**.
-  - Total room dust is calibrated to **1 Kg (1000g)**.
+- **True Dust & Dirt Collection (100x100 Precise Grid)**:
+  - The room is modeled as a high-precision **100x100 pixel grid (10,000 pixels total)**.
+  - Each pixel stores its exact mass: **0.1g of dust per pixel** (`1000g / 10,000px = 0.1g/px`).
+  - The cleaner removes dust and dirt at **0.1g/s distributed across pixels under the vacuum** (rather than applied individually to each pixel).
+  - Moving quickly over a pixel leaves it partially cleaned: the visual opacity is directly proportional to remaining dust (e.g. 50% dust = 50% transparent, revealing the warm woven carpet underneath).
+  - **Layered Dirt Over Dust**:
+    - Dirt zones place dirt on top of dust pixels (containing up to 0.1g dirt and 0.1g dust beneath).
+    - Dirt must be completely removed from a pixel before dust from that pixel can be collected!
+    - Dirt visually fades as it is vacuumed away, revealing the dust layer, which in turn fades to reveal spotless carpet.
+  - Total room dust is calibrated to **1 Kg (1000g)**. Moving over already-cleaned carpet yields **0g**.
 - **Robot Storage Bar (Bottom-Left)**:
   - Displayed at the **bottom left of the screen**, styled just like the stored dust display.
   - Thick vertical grey progress bar with white outlines, tick marks, and live numerical read-out (`0.00 / 0.50g`).
@@ -56,24 +62,26 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
   - Brown woven plush carpet revealed beneath cleaned paths.
 - **Web Audio FX**: Procedural suction whoosh, vacuum motor hum, full warning alert, storage blips, and upgrade purchase chimes.
 
-- **Centralized Configuration (`values.js`)**:
-  - All numeric constants, base speeds, capacities, and upgrade configurations are stored in a single global `Values` variable:
+- **Centralized Configuration & Dynamic Calculations (`values.js`)**:
+  - All room dimensions, mass capacities, refill percentages, clean rates, and upgrade configurations are stored in `values.js`:
     ```javascript
     Values = {
       storage: { max: Infinity, dust: 0, dirt: 0 },
-      vacuum: { storeRate: 0.1, capacity: 0.5, stored: 0, storedDust: 0, storedDirt: 0, speed: 0.01, size: 0.1 },
-      room: { dustCapacity: 1000, dirtCapacity: 100 },
-      shops: {
-        dustShop: {
-          Speed: { effect: 0.1, cost: 0.5, mult: 1.5, level: 0 },
-          CapacityMult: { effect: 0.5, cost: 0.5, mult: 1.5, level: 0 },
-          StoreRate: { effect: 0.5, cost: 0.5, mult: 1.5, level: 0 },
-          Dirt: { isUnlock: true, maxLevel: 1, cost: 0.5, level: 0 }
-        }
-      }
+      vacuum: { cleanRate: 0.1, storeRate: 1.0, capacity: 0.5, stored: 0, storedDust: 0, storedDirt: 0, speed: 0.01, size: 0.1 },
+      room: {
+        gridRes: 100, dustCapacity: 1000, dirtCapacity: 100, dustReappearDelay: 10000, dustFadeDuration: 1200,
+        get totalPixels() { return this.gridRes * this.gridRes; },
+        get dustPerPixel() { return this.dustCapacity / this.totalPixels; },
+        get dirtPerPixel() { return this.dustPerPixel; }
+      },
+      dirt: { refillThresholdPercent: 0.70, maxCapPercent: 1.00, spawnIntervalMs: 2000, maxActiveZones: 14 },
+      particles: { maxDustMotes: 80, maxTransferParticles: 90, maxSplashParticles: 30 },
+      progress: { milestones: [25, 50, 75, 90, 100], sampleIntervalMs: 250 },
+      shops: { ... }
     }
     ```
-  - Upgrades act as dynamic multipliers (`1 + level * effect`) without modifying base values.
+  - **Dynamic Calculations**: Changing `gridRes` or `dustCapacity` automatically recalculates `totalPixels`, `dustPerPixel`, and `dirtPerPixel` without touching other files!
+  - **Randomized Seed on Refill**: Every time dirt drops below the refill threshold (`70%`), the noise seed is randomized so dirt patches sprout in completely new locations across the room.
 
 ## 🚀 How to Play
 Open `index.html` in any modern web browser.
