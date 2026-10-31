@@ -21,13 +21,11 @@
   const overlayCanvas = document.getElementById('overlay-canvas');
   const overlayCtx = overlayCanvas.getContext('2d');
   const dustIndicator = document.getElementById('dust-indicator');
-  const canisterBadge = document.getElementById('canister-badge');
-  const canisterMeterFill = document.getElementById('canister-meter-fill');
-  const canisterText = document.getElementById('canister-text');
+  const robotStorageCard = document.getElementById('robot-storage-card');
+  const robotStorageFill = document.getElementById('robot-storage-fill');
+  const robotStorageValue = document.getElementById('robot-storage-value');
   const storageFill = document.getElementById('storage-fill');
   const storageValue = document.getElementById('storage-value');
-  const storeActionBtn = document.getElementById('store-action-btn');
-  const storeStatusText = document.getElementById('store-status-text');
   const soundBtn = document.getElementById('sound-btn');
   const soundIcon = document.getElementById('sound-icon');
   const hintOverlay = document.getElementById('hint-overlay');
@@ -65,53 +63,37 @@
   let roomX = 0;
   let roomY = 0;
 
-  // Vacuum Specifications: 1% of the screen (0.01 * roomSize)
-  const RADIUS_RATIO = 0.01;
+  // Vacuum Specifications: size ratio from Values (1% of room dimension)
   let cleanerRadius = 8.0;
-
-  // Physical Dust Mass: Full room is 1 Kg (1000g)
-  const TOTAL_ROOM_DUST = 1000.0;
 
   // Room Dust Tracking Grid: 160 x 160 cells (synchronized with dust cleared indicator)
   const GRID_RES = 160;
   const roomGrid = new Float64Array(GRID_RES * GRID_RES); // stores timeCleaned
-  const CELL_DUST = TOTAL_ROOM_DUST / (GRID_RES * GRID_RES); // mass of single cell
+  const CELL_DUST = Values.room.dustCapacity / (GRID_RES * GRID_RES); // mass of single cell
 
-  // Upgrades State
-  let speedLevel = 0;       // Each level adds 0.1% screen/s (+0.001)
-  let capacityLevel = 0;    // Each level adds 0.1x to vacuum capacity mult
-
+  // Upgrades and dynamic state helpers referencing window.Values
   function getSpeedCost() {
-    return 0.5 * Math.pow(1.5, speedLevel);
+    return Values.getUpgradeCost('Speed');
   }
 
   function getSpeedRatio() {
-    // Base speed: 1.0% screen/s (0.01). Each level adds +0.1% screen/s (+0.001)
-    return 0.01 + speedLevel * 0.001;
+    return Values.getEffectiveSpeed();
   }
 
   function getCapacityCost() {
-    return 0.5 * Math.pow(1.5, capacityLevel);
+    return Values.getUpgradeCost('CapacityMult');
   }
 
   function getCapacityMult() {
-    // Base mult: 1.0x. Each level adds +0.1x
-    return 1.0 + capacityLevel * 0.1;
+    const upg = Values.shops.dustShop.CapacityMult;
+    return 1.0 + (upg.level * upg.effect);
   }
 
   function getMaxVacuumCapacity() {
-    // Multiplies the vacuum space: base 0.5g * capacityMult
-    return 0.5 * getCapacityMult();
+    return Values.getEffectiveCapacity();
   }
 
-  // Vacuum Capacity & Storage Mechanics
-  const MAX_STORAGE = 10.0;        // Storage holds max 10.0g
-  const STORE_TRANSFER_RATE = 0.1; // 0.1g per second transfer rate
-
-  let vacuumDust = 0.0;
-  let storedDust = 0.0;
   let isSpaceHeld = false;
-  let isStorePointerDown = false;
   let isShopOpen = false;
   let hadPlayedFullAlert = false;
 
@@ -365,8 +347,8 @@
     roomX = (width - roomSize) * 0.5;
     roomY = (height - roomSize) * 0.5;
 
-    // Vacuum radius: 1% of the room size
-    cleanerRadius = Math.max(3.0, roomSize * RADIUS_RATIO);
+    // Vacuum radius: 1% of the room size (from Values)
+    cleanerRadius = Math.max(3.0, roomSize * Values.getSizeRatio());
   }
 
   // --- Offscreen Mask Setup ---
@@ -480,54 +462,45 @@
     const capMult = getCapacityMult().toFixed(1);
     const maxCap = getMaxVacuumCapacity().toFixed(2);
 
-    if (speedLevelDisplay) speedLevelDisplay.textContent = `Lvl ${speedLevel}`;
+    if (speedLevelDisplay) speedLevelDisplay.textContent = `Lvl ${Values.shops.dustShop.Speed.level}`;
     if (speedCurrentDisplay) speedCurrentDisplay.textContent = `${speedPct}% / s`;
     if (speedCostDisplay) speedCostDisplay.textContent = `${speedCost.toFixed(2)}g`;
-    if (buySpeedBtn) buySpeedBtn.disabled = (storedDust < speedCost);
+    if (buySpeedBtn) buySpeedBtn.disabled = (Values.storage.content < speedCost);
 
-    if (capacityLevelDisplay) capacityLevelDisplay.textContent = `Lvl ${capacityLevel}`;
+    if (capacityLevelDisplay) capacityLevelDisplay.textContent = `Lvl ${Values.shops.dustShop.CapacityMult.level}`;
     if (capacityCurrentDisplay) capacityCurrentDisplay.textContent = `${maxCap}g (${capMult}x)`;
     if (capacityCostDisplay) capacityCostDisplay.textContent = `${capacityCost.toFixed(2)}g`;
-    if (buyCapacityBtn) buyCapacityBtn.disabled = (storedDust < capacityCost);
+    if (buyCapacityBtn) buyCapacityBtn.disabled = (Values.storage.content < capacityCost);
 
-    if (shopStoredDust) shopStoredDust.textContent = `${storedDust.toFixed(2)}g`;
+    if (shopStoredDust) shopStoredDust.textContent = `${Values.storage.content.toFixed(2)}g`;
   }
 
-  // Update Vacuum Canister and Storage UI
+  // Update Robot Storage and Main Storage UI
   function updateCapacityAndStorageUI() {
     const maxCapacity = getMaxVacuumCapacity();
-    const isFull = (vacuumDust >= maxCapacity - 0.0001);
+    const isFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
 
-    if (canisterBadge && canisterText) {
+    // Robot Storage (Bottom-Left, like stored dust)
+    if (robotStorageCard && robotStorageValue) {
       if (isFull) {
-        canisterBadge.classList.add('full');
-        canisterText.textContent = `FULL! (${maxCapacity.toFixed(2)}g)`;
+        robotStorageCard.classList.add('full');
+        robotStorageValue.textContent = `FULL! (${maxCapacity.toFixed(2)}g)`;
       } else {
-        canisterBadge.classList.remove('full');
-        canisterText.textContent = `${vacuumDust.toFixed(2)} / ${maxCapacity.toFixed(2)}g`;
+        robotStorageCard.classList.remove('full');
+        robotStorageValue.textContent = `${Values.vacuum.stored.toFixed(2)} / ${maxCapacity.toFixed(2)}g`;
       }
     }
 
-    if (canisterMeterFill) {
-      const capPct = Math.min(100, (vacuumDust / maxCapacity) * 100);
-      canisterMeterFill.style.width = `${capPct.toFixed(1)}%`;
+    if (robotStorageFill) {
+      const capPct = Math.min(100, (Values.vacuum.stored / maxCapacity) * 100);
+      robotStorageFill.style.height = `${capPct.toFixed(1)}%`;
     }
 
+    // Main Storage (Right)
     if (storageFill && storageValue) {
-      const storagePct = Math.min(100, (storedDust / MAX_STORAGE) * 100);
+      const storagePct = Math.min(100, (Values.storage.content / Values.storage.max) * 100);
       storageFill.style.height = `${storagePct.toFixed(1)}%`;
-      storageValue.textContent = `${storedDust.toFixed(1)} / ${MAX_STORAGE.toFixed(0)}g`;
-    }
-
-    const isStoringActive = (isSpaceHeld || isStorePointerDown) && (vacuumDust > 0.0001) && (storedDust < MAX_STORAGE);
-    if (storeActionBtn && storeStatusText) {
-      if (isStoringActive) {
-        storeActionBtn.classList.add('active');
-        storeStatusText.textContent = 'Storing...';
-      } else {
-        storeActionBtn.classList.remove('active');
-        storeStatusText.textContent = isFull ? 'Hold to Store' : 'Store';
-      }
+      storageValue.textContent = `${Values.storage.content.toFixed(1)} / ${Values.storage.max.toFixed(0)}g`;
     }
 
     updateUpgradesAndShopUI();
@@ -550,7 +523,7 @@
     cleanedPercent = pct;
 
     // Grams cleared based on full screen = 1Kg (1000g) of dust
-    const grams = (cleanCount / totalCells) * TOTAL_ROOM_DUST;
+    const grams = (cleanCount / totalCells) * Values.room.dustCapacity;
     if (dustIndicator) {
       dustIndicator.textContent = `Dust Cleared: ${grams.toFixed(1)}g [${pct.toFixed(1)}%]`;
     }
@@ -600,9 +573,9 @@
 
   function buySpeedUpgrade() {
     const cost = getSpeedCost();
-    if (storedDust >= cost) {
-      storedDust -= cost;
-      speedLevel++;
+    if (Values.storage.content >= cost) {
+      Values.storage.content -= cost;
+      Values.shops.dustShop.Speed.level++;
       updateUpgradesAndShopUI();
       updateCapacityAndStorageUI();
       if (window.soundEngine) window.soundEngine.playPurchaseSound();
@@ -611,9 +584,9 @@
 
   function buyCapacityUpgrade() {
     const cost = getCapacityCost();
-    if (storedDust >= cost) {
-      storedDust -= cost;
-      capacityLevel++;
+    if (Values.storage.content >= cost) {
+      Values.storage.content -= cost;
+      Values.shops.dustShop.CapacityMult.level++;
       updateUpgradesAndShopUI();
       updateCapacityAndStorageUI();
       if (window.soundEngine) window.soundEngine.playPurchaseSound();
@@ -672,7 +645,7 @@
 
     // Indicator tag directly above vacuum if full
     const maxCapacity = getMaxVacuumCapacity();
-    const isFull = (vacuumDust >= maxCapacity - 0.0001);
+    const isFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
     if (isFull) {
       overlayCtx.save();
       overlayCtx.font = '700 11px Outfit, sans-serif';
@@ -683,7 +656,7 @@
     }
 
     // Indicator if storing dust (transfer active)
-    const isStoringActive = (isSpaceHeld || isStorePointerDown) && (vacuumDust > 0.0001) && (storedDust < MAX_STORAGE);
+    const isStoringActive = isSpaceHeld && (Values.vacuum.stored > 0.0001) && (Values.storage.content < Values.storage.max);
     if (isStoringActive) {
       overlayCtx.save();
       overlayCtx.font = '700 11px Outfit, sans-serif';
@@ -739,10 +712,11 @@
     particles.length = 0;
     cleanTrail = [];
     roomGrid.fill(0);
-    vacuumDust = 0.0;
-    storedDust = 0.0;
+    Values.vacuum.stored = 0.0;
+    Values.storage.content = 0.0;
+    Values.shops.dustShop.Speed.level = 0;
+    Values.shops.dustShop.CapacityMult.level = 0;
     isSpaceHeld = false;
-    isStorePointerDown = false;
     hadPlayedFullAlert = false;
 
     renderMask(performance.now());
@@ -766,25 +740,25 @@
     prevCleanerPos.y = cleanerPos.y;
 
     const maxCapacity = getMaxVacuumCapacity();
-    const isVacuumFull = (vacuumDust >= maxCapacity - 0.0001);
+    const isVacuumFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
 
     // Storing dust into Storage Tank:
     // "you should keep pressing space to store"
-    const isStoringActive = (isSpaceHeld || isStorePointerDown) && (vacuumDust > 0.0001) && (storedDust < MAX_STORAGE);
+    const isStoringActive = isSpaceHeld && (Values.vacuum.stored > 0.0001) && (Values.storage.content < Values.storage.max);
     if (isStoringActive) {
-      const transfer = Math.min(vacuumDust, STORE_TRANSFER_RATE * dt);
-      const actualTransfer = Math.min(transfer, MAX_STORAGE - storedDust);
+      const transfer = Math.min(Values.vacuum.stored, Values.vacuum.storeRate * dt);
+      const actualTransfer = Math.min(transfer, Values.storage.max - Values.storage.content);
 
-      vacuumDust -= actualTransfer;
-      storedDust += actualTransfer;
+      Values.vacuum.stored -= actualTransfer;
+      Values.storage.content += actualTransfer;
 
-      if (vacuumDust < 0.0001) {
-        vacuumDust = 0.0;
+      if (Values.vacuum.stored < 0.0001) {
+        Values.vacuum.stored = 0.0;
         hadPlayedFullAlert = false;
       }
 
-      if (storedDust >= MAX_STORAGE) {
-        storedDust = MAX_STORAGE;
+      if (Values.storage.content >= Values.storage.max) {
+        Values.storage.content = Values.storage.max;
       }
 
       if (Math.random() < 0.25 && window.soundEngine) {
@@ -856,9 +830,9 @@
             if (dustyCellsCleared > 0) {
               // Gain dust strictly for newly cleared dusty cells!
               const dustGained = dustyCellsCleared * CELL_DUST;
-              vacuumDust = Math.min(maxCapacity, vacuumDust + dustGained);
+              Values.vacuum.stored = Math.min(maxCapacity, Values.vacuum.stored + dustGained);
 
-              if (vacuumDust >= maxCapacity - 0.0001) {
+              if (Values.vacuum.stored >= maxCapacity - 0.0001) {
                 if (!hadPlayedFullAlert) {
                   hadPlayedFullAlert = true;
                   if (window.soundEngine) window.soundEngine.playFullWarning();
@@ -1041,7 +1015,6 @@
   window.addEventListener('blur', () => {
     isLeftMouseDown = false;
     isSpaceHeld = false;
-    isStorePointerDown = false;
     if (window.soundEngine) window.soundEngine.updateMovement(0);
   });
 
@@ -1080,35 +1053,6 @@
       isSpaceHeld = false;
     }
   });
-
-  // Hold-to-Store Button Listeners
-  if (storeActionBtn) {
-    storeActionBtn.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      isStorePointerDown = true;
-      if (window.soundEngine) {
-        window.soundEngine.resume();
-        window.soundEngine.playStoreBlip();
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      isStorePointerDown = false;
-    });
-
-    storeActionBtn.addEventListener('touchstart', (e) => {
-      e.stopPropagation();
-      isStorePointerDown = true;
-      if (window.soundEngine) {
-        window.soundEngine.resume();
-        window.soundEngine.playStoreBlip();
-      }
-    }, { passive: true });
-
-    storeActionBtn.addEventListener('touchend', () => {
-      isStorePointerDown = false;
-    });
-  }
 
   // Shop Button & Upgrades Listeners
   if (shopBtn) {

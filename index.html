@@ -16,25 +16,35 @@
     <canvas id="overlay-canvas"></canvas>
   </div>
 
-  <!-- Top Right Combined Indicator -->
+  <!-- Top Right Dust Cleared Indicator & Sound Toggle -->
   <header class="hud-top-right">
     <div class="hud-card indicator-card">
       <span class="stat-icon">🧹</span>
       <span id="dust-indicator" class="stat-text">Dust Cleared: 0.0g [0.0%]</span>
-      <div class="canister-badge" id="canister-badge" title="Vacuum Canister (Max 0.5g)">
-        <span class="canister-icon">🪣</span>
-        <div class="canister-meter-bg">
-          <div id="canister-meter-fill" class="canister-meter-fill"></div>
-        </div>
-        <span id="canister-text">0.00 / 0.50g</span>
-      </div>
     </div>
     <button id="sound-btn" class="icon-btn" title="Toggle Sound (M)" aria-label="Toggle Sound">
       <span id="sound-icon">🔊</span>
     </button>
   </header>
 
-  <!-- Right Vertical Storage Progress Bar -->
+  <!-- Bottom Left Robot Storage Progress Bar (like stored dust) -->
+  <aside class="robot-storage-sidebar">
+    <div id="robot-storage-card" class="storage-card">
+      <div class="storage-title">ROBOT</div>
+      
+      <div class="storage-bar-outer">
+        <div class="storage-bar-track">
+          <div id="robot-storage-fill" class="storage-fill"></div>
+        </div>
+      </div>
+
+      <div class="storage-footer">
+        <span id="robot-storage-value" class="storage-text">0.00 / 0.50g</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Right Vertical Storage Progress Bar (Stored Dust) -->
   <aside class="storage-sidebar">
     <div class="storage-card">
       <div class="storage-title">STORAGE</div>
@@ -47,10 +57,6 @@
 
       <div class="storage-footer">
         <span id="storage-value" class="storage-text">0.0 / 10g</span>
-        <button id="store-action-btn" class="store-btn" title="Hold Space to Store (0.1g/s)">
-          <span class="store-kbd">HOLD SPACE</span>
-          <span id="store-status-text">Store</span>
-        </button>
       </div>
     </div>
   </aside>
@@ -131,6 +137,7 @@
     <span id="toast-text">✨ 25% Cleaned! Great job!</span>
   </div>
 
+  <script src="values.js"></script>
   <script src="sound.js"></script>
   <script src="game.js"></script>
 </body>
