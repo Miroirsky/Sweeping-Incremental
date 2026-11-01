@@ -92,5 +92,7 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
 Open `index.html` in any modern web browser.
 - **Hold Left Click**: Vacuum towards cursor.
 - **Keep Pressing (Hold) Space**: Store collected dust into infinite storage at 0.1g/s (movement locked while storing).
-- **Click Shop (or press B)**: Open the square Dust Shop to purchase upgrades with stored dust.
+- **Click Shop (or press B / E)**: Open the shop to purchase upgrades with stored dust and dirt.
 - **Press M**: Toggle audio.
+- **Click Reset (🔄 or press R)**: Reset all game progress with a confirmation prompt.
+- **Auto-Save**: Game progress (infinite storage, robot canisters, docking station, upgrades, and milestones) is automatically saved to `localStorage` every 2 seconds and upon buying upgrades. The room's dust resets to full on each page load.

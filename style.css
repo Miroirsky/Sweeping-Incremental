@@ -775,6 +775,21 @@ body.shop-open .bottom-menu-dock {
   transform: translateY(1px);
 }
 
+#reset-btn:hover {
+  border-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.25);
+  background: rgba(55, 30, 30, 0.9);
+}
+
+#reset-btn:hover #reset-icon {
+  transform: rotate(-45deg);
+}
+
+#reset-icon {
+  display: inline-block;
+  transition: transform 0.25s ease;
+}
+
 /* Hint overlay */
 .hint-overlay {
   position: absolute;

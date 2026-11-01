@@ -35,6 +35,7 @@
   const storageDirtValue = document.getElementById('storage-dirt-value');
   const soundBtn = document.getElementById('sound-btn');
   const soundIcon = document.getElementById('sound-icon');
+  const resetBtn = document.getElementById('reset-btn');
   const hintOverlay = document.getElementById('hint-overlay');
   const toast = document.getElementById('toast');
   const toastText = document.getElementById('toast-text');
@@ -754,6 +755,7 @@
       updateUpgradesAndShopUI();
       updateCapacityAndStorageUI();
       if (window.soundEngine) window.soundEngine.playPurchaseSound();
+      saveGame();
 
       const updatedCardEl = document.getElementById(`card-${key}`);
       if (updatedCardEl) {
@@ -2237,8 +2239,131 @@
     }
   }
 
+  // --- Local Save & Load System ---
+  const SAVE_KEY = 'sweeping_incremental_save';
+
+  function saveGame() {
+    try {
+      const upgradeLevels = {};
+      if (Values.shops) {
+        for (const shopKey of Object.keys(Values.shops)) {
+          const shop = Values.shops[shopKey];
+          if (!shop) continue;
+          upgradeLevels[shopKey] = {};
+          for (const upgKey of Object.keys(shop)) {
+            const upg = shop[upgKey];
+            if (upg && typeof upg.level === 'number') {
+              upgradeLevels[shopKey][upgKey] = upg.level;
+            }
+          }
+        }
+      }
+
+      const saveData = {
+        version: 1,
+        timestamp: Date.now(),
+        storage: {
+          dust: Number(Values.storage.dust) || 0,
+          dirt: Number(Values.storage.dirt) || 0
+        },
+        vacuum: {
+          storedDust: Number(Values.vacuum.storedDust) || 0,
+          storedDirt: Number(Values.vacuum.storedDirt) || 0
+        },
+        station: {
+          dust: Number(stationStorage.dust) || 0,
+          dirt: Number(stationStorage.dirt) || 0
+        },
+        upgrades: upgradeLevels,
+        milestones: Array.from(reachedMilestones),
+        isMuted: !!(window.soundEngine && window.soundEngine.isMuted)
+      };
+
+      localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+    } catch (err) {
+      console.warn('Could not save game to localStorage:', err);
+    }
+  }
+
+  function loadGame() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data) return false;
+
+      // Restore storage
+      if (data.storage) {
+        Values.storage.dust = Math.max(0, Number(data.storage.dust) || 0);
+        Values.storage.dirt = Math.max(0, Number(data.storage.dirt) || 0);
+      }
+
+      // Restore vacuum canister
+      if (data.vacuum) {
+        Values.vacuum.storedDust = Math.max(0, Number(data.vacuum.storedDust) || 0);
+        Values.vacuum.storedDirt = Math.max(0, Number(data.vacuum.storedDirt) || 0);
+        Values.vacuum.stored = (Values.vacuum.storedDust || 0) + (Values.vacuum.storedDirt || 0);
+      }
+
+      // Restore station
+      if (data.station) {
+        stationStorage.dust = Math.max(0, Number(data.station.dust) || 0);
+        stationStorage.dirt = Math.max(0, Number(data.station.dirt) || 0);
+      }
+
+      // Restore upgrade levels
+      if (data.upgrades && Values.shops) {
+        for (const shopKey of Object.keys(data.upgrades)) {
+          const savedShop = data.upgrades[shopKey];
+          const currentShopData = Values.shops[shopKey];
+          if (!savedShop || !currentShopData) continue;
+          for (const upgKey of Object.keys(savedShop)) {
+            if (currentShopData[upgKey] && typeof savedShop[upgKey] === 'number') {
+              currentShopData[upgKey].level = savedShop[upgKey];
+            }
+          }
+        }
+      }
+
+      // Restore reached milestones
+      if (Array.isArray(data.milestones)) {
+        reachedMilestones.clear();
+        for (const m of data.milestones) {
+          reachedMilestones.add(m);
+        }
+      }
+
+      // Restore audio mute if saved
+      if (typeof data.isMuted === 'boolean' && window.soundEngine) {
+        window.soundEngine.isMuted = data.isMuted;
+        if (soundIcon) soundIcon.textContent = data.isMuted ? '🔇' : '🔊';
+        if (soundBtn) soundBtn.title = data.isMuted ? 'Unmute Sound (M)' : 'Mute Sound (M)';
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('Could not load game from localStorage:', err);
+      return false;
+    }
+  }
+
+  // --- Reset Game Confirmation & Handler ---
+  function handleResetRequest() {
+    isLeftMouseDown = false;
+    const confirmed = window.confirm('Reset all game progress? This will reset all storage, bots, and upgrades.');
+    if (confirmed) {
+      resetGame();
+    }
+  }
+
   // --- Reset Game ---
   function resetGame() {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch (e) {
+      console.warn('Could not remove save from localStorage:', e);
+    }
+
     noiseOffset = [Math.random() * 100.0, Math.random() * 100.0];
     reachedMilestones.clear();
     particles.length = 0;
@@ -2288,6 +2413,7 @@
     hadPlayedFullAlert = false;
     currentShop = 'dustShop';
 
+    closeShop();
     updateDirtShopVisibility();
     initShopUI();
     updateUpgradesAndShopUI();
@@ -2297,7 +2423,20 @@
     if (window.soundEngine) {
       window.soundEngine.resume();
     }
+
+    if (toast && toastText) {
+      toastText.textContent = '🔄 Game progress reset!';
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 3000);
+    }
   }
+
+  // Expose save, load, and reset on Values for console access
+  Values.saveGame = saveGame;
+  Values.loadGame = loadGame;
+  Values.resetGame = resetGame;
 
   // --- Main Animation Loop ---
   function render(time) {
@@ -2831,7 +2970,7 @@
     } else if (e.key === 'm' || e.key === 'M') {
       soundBtn.click();
     } else if (e.key === 'r' || e.key === 'R') {
-      resetGame();
+      handleResetRequest();
     }
   });
 
@@ -2891,11 +3030,30 @@
       const unmuted = window.soundEngine.toggleMute();
       soundIcon.textContent = unmuted ? '🔊' : '🔇';
       soundBtn.title = unmuted ? 'Mute Sound (M)' : 'Unmute Sound (M)';
+      saveGame();
     }
   });
 
+  // Reset Button
+  if (resetBtn) {
+    resetBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      isLeftMouseDown = false;
+    });
+    resetBtn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      isLeftMouseDown = false;
+    });
+    resetBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isLeftMouseDown = false;
+      handleResetRequest();
+    });
+  }
+
   // --- Bootstrap Game ---
   function init() {
+    loadGame();
     cleanerAngle = Math.PI * 0.5;
     Values.cleanerAngle = cleanerAngle;
     updateRoomGeometry();
@@ -2903,6 +3061,7 @@
     initTextures();
     updateDirtShopVisibility();
     initShopUI();
+    updateUpgradesAndShopUI();
     syncAutoCleaners();
     onResize();
 
@@ -2921,6 +3080,11 @@
     updateCapacityAndStorageUI();
 
     lastFrameTime = performance.now();
+
+    // Auto-save every 2 seconds and on page hide/unload
+    setInterval(saveGame, 2000);
+    window.addEventListener('beforeunload', saveGame);
+    window.addEventListener('pagehide', saveGame);
 
     // Start render loop
     requestAnimationFrame(render);
