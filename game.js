@@ -81,17 +81,34 @@
   Values.stationGeometry = stationGeometry;
 
   function getStationCapacity() {
-    if (Values.getStationCapacity) return Values.getStationCapacity();
-    return (Values.station && Values.station.capacity != null) ? Values.station.capacity : 50.0;
+    if (Values.station && typeof Values.station.capacity === 'number') {
+      return Values.station.capacity;
+    }
+    if (typeof Values.getStationCapacity === 'function') {
+      const c = Values.getStationCapacity();
+      if (typeof c === 'number' && !isNaN(c)) return c;
+    }
+    return 50.0;
   }
 
   const stationStorage = {
-    dust: 0.0,
-    dirt: 0.0,
+    get dust() { return Values.station ? (Values.station.dust || 0) : 0; },
+    set dust(val) {
+      if (Values.station) {
+        Values.station.dust = val;
+        Values.station.stored = (Values.station.dust || 0) + (Values.station.dirt || 0);
+      }
+    },
+    get dirt() { return Values.station ? (Values.station.dirt || 0) : 0; },
+    set dirt(val) {
+      if (Values.station) {
+        Values.station.dirt = val;
+        Values.station.stored = (Values.station.dust || 0) + (Values.station.dirt || 0);
+      }
+    },
     get capacity() { return getStationCapacity(); },
     get stored() { return (this.dust || 0) + (this.dirt || 0); }
   };
-  Values.station = stationStorage;
 
   // Vacuum Specifications: size ratio from Values (1% of room dimension)
   let cleanerRadius = 8.0;
@@ -1339,8 +1356,8 @@
   const autoCleanerParticles = [];
 
   function getAutoVacuumRadius() {
-    const sizeRatio = (Values.getAutoVacuumSizeRatio) ? Values.getAutoVacuumSizeRatio() : 0.01;
-    return Math.max(3.0, roomSize * sizeRatio);
+    const sizeRatio = (Values.getAutoVacuumSizeRatio) ? Values.getAutoVacuumSizeRatio() : 0.025;
+    return Math.max(5.0, roomSize * sizeRatio);
   }
 
   function getAutoVacuumSpeed() {
@@ -1691,12 +1708,13 @@
   }
 
   function drawAutoCleaner(bot) {
-    const r = Math.max(4.0, bot.radius);
+    if (!bot || isNaN(bot.x) || isNaN(bot.y)) return;
+    const r = Math.max(6.0, bot.radius || getAutoVacuumRadius() || 12.0);
     const topOffsetRatio = (Values.getAutoVacuumTopVisualOffset)
       ? Values.getAutoVacuumTopVisualOffset()
       : ((Values.autoVacuum && Values.autoVacuum.topVisualOffset != null) ? Values.autoVacuum.topVisualOffset : 0.15);
     const topOffsetY = -r * topOffsetRatio;
-    const rotation = bot.angle - Math.PI * 0.5;
+    const rotation = (bot.angle != null ? bot.angle : 0) - Math.PI * 0.5;
 
     overlayCtx.save();
     overlayCtx.imageSmoothingEnabled = true;

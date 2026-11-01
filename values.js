@@ -18,14 +18,14 @@ var Values = {
 
   // Vacuum Robot Configuration
   vacuum: {
-    cleanRate: 0.1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
-    storeRate: 0.5,    // Transfer rate into infinite storage while holding Space (g/s)
-    capacity: 0.5,     // Base vacuum canister capacity (g)
+    cleanRate: 100,    // Rate of cleaning distributed across pixels under vacuum (g/s)
+    storeRate: 100000,    // Transfer rate into infinite storage while holding Space (g/s)
+    capacity: 1000,     // Base vacuum canister capacity (g)
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
-    speed: 0.01,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.01,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    speed: 1,       // Base movement speed ratio (fraction of screen dimension per second)
+    size: 0.5,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
     topVisualOffset: 0.2, // Visual vertical offset of the top lid (fraction of vacuum radius, e.g. 0.15 = 15% up)
     rotateWithMovement: true, // Whether the vacuum rotates to face movement direction
     bottomImage: "Assets/Icons/B.O.B. Bottom.png", // Bottom/base sprite image
@@ -40,8 +40,10 @@ var Values = {
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
     speed: 0.02,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.1,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
-    topVisualOffset: 0.15 // Visual vertical offset of the top lid (fraction of vacuum radius)
+    size: 0.25,        // Size ratio (0.25 corresponds to 2.5% of room dimension in getSizeRatio, half of main vacuum)
+    topVisualOffset: 0.15, // Visual vertical offset of the top lid (fraction of vacuum radius)
+    bottomImage: "Assets/Icons/B.O.B. Bottom.png",
+    topImage: "Assets/Icons/B.O.B. Top.png"
   },
 
   // Station Configuration (Docking Station on right)
@@ -278,7 +280,7 @@ var Values = {
 
   // Station storage tank capacity in grams (50g)
   getStationCapacity() {
-    return (this.station && this.station.capacity != null) ? this.station.capacity : 50.0;
+    return (this.station && typeof this.station.capacity === 'number') ? this.station.capacity : 50.0;
   },
 
   // Effective vacuum capacity in grams (e.g. 0.5 * (1 + level * 0.5))
