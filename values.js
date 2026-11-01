@@ -24,7 +24,7 @@ var Values = {
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
-    speed: 0.1,       // Base movement speed ratio (fraction of screen dimension per second)
+    speed: 0.5,       // Base movement speed ratio (fraction of screen dimension per second)
     size: 0.5,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
     topVisualOffset: 0.2, // Visual vertical offset of the top lid (fraction of vacuum radius, e.g. 0.15 = 15% up)
     rotateWithMovement: true, // Whether the vacuum rotates to face movement direction
