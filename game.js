@@ -45,6 +45,13 @@
   const shopCardsTray = document.getElementById('shop-cards-tray');
   let currentShop = 'dustShop';
 
+  // Default Vacuum Bot Images (B.O.B. Bottom & Top)
+  const bobBottomImg = new Image();
+  bobBottomImg.src = (Values.vacuum && Values.vacuum.bottomImage) || 'Assets/Icons/B.O.B. Bottom.png';
+
+  const bobTopImg = new Image();
+  bobTopImg.src = (Values.vacuum && Values.vacuum.topImage) || 'Assets/Icons/B.O.B. Top.png';
+
   // --- WebGL Context ---
   let gl = null;
   let shaderProgram = null;
@@ -166,6 +173,8 @@
   let mousePos = { x: width * 0.5, y: height * 0.5 };
   let cleanerPos = { x: width * 0.5, y: height * 0.5 };
   Values.cleanerPos = cleanerPos;
+  let cleanerAngle = Math.PI * 0.5; // Default orientation: resting upright
+  Values.cleanerAngle = cleanerAngle;
   let prevCleanerPos = { x: width * 0.5, y: height * 0.5 };
   let hasUserMovedMouse = false;
   let lastFrameTime = performance.now();
@@ -399,73 +408,6 @@
           float suckRim = smoothstep(1.8, 0.0, abs(distToCleaner - rSuck));
           surface = mix(surface, vec3(0.0, 0.0, 0.0), 0.40 * suckRim);
         }
-      }
-
-      // ==========================================
-      // 4. CLEANER CIRCLE (Grey for Dust, Brown for Dirt)
-      // ==========================================
-      // Antialiased circle edge
-      float circleMask = clamp(r - distToCleaner + 0.6, 0.0, 1.0);
-
-      // Soft white visibility halo so circle is easily trackable
-      float halo = exp(-distToCleaner / max(3.0, r * 1.6)) * 0.35;
-      surface = mix(surface, vec3(1.0, 1.0, 1.0), halo * (1.0 - circleMask));
-
-      // Ambient contact shadow under circle
-      float shadowDist = smoothstep(r + 6.0, r, distToCleaner);
-      surface = mix(surface, vec3(0.05, 0.02, 0.01), shadowDist * 0.35 * (1.0 - circleMask));
-
-      // Crisp circle with white outer rim and stacked dust/dirt fills inside
-      if (circleMask > 0.0) {
-        float borderWidth = max(1.8, r * 0.20);
-        float rInner = max(1.0, r - borderWidth);
-
-        vec3 circleColor;
-        if (distToCleaner >= rInner) {
-          // White outer rim (pulsing red when full)
-          vec3 rimColor = vec3(1.0, 1.0, 1.0);
-          if (u_cleaner_is_full > 0.5) {
-            rimColor = mix(vec3(1.0, 1.0, 1.0), vec3(1.0, 0.35, 0.35), 0.5 + 0.5 * sin(u_time * 8.0));
-          }
-          circleColor = rimColor;
-        } else {
-          // Inner canister: fills with grey for dust and brown for dirt!
-          float fillY = clamp((fragCoord.y - (u_cleaner.y - rInner)) / (2.0 * rInner), 0.0, 1.0);
-
-          // Storage grey gradient (matches #9ca3af to #6b7280)
-          vec3 greyFill = mix(vec3(0.42, 0.45, 0.50), vec3(0.61, 0.64, 0.69), fillY);
-
-          // Storage brown gradient (matches terracotta/clay dirt tone)
-          vec3 brownFill = mix(vec3(0.48, 0.22, 0.15), vec3(0.70, 0.38, 0.29), fillY);
-
-          // Empty canister interior (clean off-white background)
-          vec3 emptyFill = vec3(0.92, 0.94, 0.96);
-
-          float totalFill = clamp(u_dust_fill + u_dirt_fill, 0.0, 1.0);
-
-          vec3 innerColor = emptyFill;
-          if (fillY <= u_dust_fill) {
-            innerColor = greyFill;
-            // Meniscus highlight at top of dust
-            if (abs(fillY - u_dust_fill) < 0.02 && u_dust_fill > 0.02) {
-              innerColor = mix(innerColor, vec3(1.0, 1.0, 1.0), 0.7);
-            }
-          } else if (fillY <= totalFill) {
-            innerColor = brownFill;
-            // Meniscus highlight at top of dirt
-            if (abs(fillY - totalFill) < 0.02 && totalFill > 0.02) {
-              innerColor = mix(innerColor, vec3(1.0, 0.9, 0.8), 0.75);
-            }
-          }
-
-          if (u_cleaner_is_full > 0.5) {
-            innerColor = mix(innerColor, vec3(0.92, 0.35, 0.35), 0.3 + 0.2 * sin(u_time * 8.0));
-          }
-
-          circleColor = innerColor;
-        }
-
-        surface = mix(surface, circleColor, circleMask);
       }
 
       gl_FragColor = vec4(surface, 1.0);
@@ -1719,95 +1661,104 @@
   }
 
   function drawAutoCleaner(bot) {
-    const isFull = (bot.stored >= bot.capacity - 0.0001);
     const r = Math.max(4.0, bot.radius);
+    const topOffsetRatio = (Values.getAutoVacuumTopVisualOffset)
+      ? Values.getAutoVacuumTopVisualOffset()
+      : ((Values.autoVacuum && Values.autoVacuum.topVisualOffset != null) ? Values.autoVacuum.topVisualOffset : 0.15);
+    const topOffsetY = -r * topOffsetRatio;
+    const rotation = bot.angle - Math.PI * 0.5;
 
     overlayCtx.save();
+    overlayCtx.imageSmoothingEnabled = true;
+    overlayCtx.imageSmoothingQuality = 'high';
 
-    // 1. Soft white visibility halo (matching default bot)
-    const haloGrad = overlayCtx.createRadialGradient(bot.x, bot.y, r * 0.7, bot.x, bot.y, r * 1.6);
-    haloGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
-    haloGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    overlayCtx.beginPath();
-    overlayCtx.arc(bot.x, bot.y, r * 1.6, 0, Math.PI * 2);
-    overlayCtx.fillStyle = haloGrad;
-    overlayCtx.fill();
-
-    // 2. Ambient contact shadow under circle
-    overlayCtx.beginPath();
-    overlayCtx.arc(bot.x, bot.y + Math.max(1.5, r * 0.15), r + Math.max(2, r * 0.2), 0, Math.PI * 2);
-    overlayCtx.fillStyle = 'rgba(13, 5, 3, 0.35)';
-    overlayCtx.fill();
-
-    // 3. Selection / Full outer ring
-    if (isFull || bot.state === 'returning') {
-      overlayCtx.beginPath();
-      overlayCtx.arc(bot.x, bot.y, r + Math.max(2.5, r * 0.25), 0, Math.PI * 2);
-      const pulse = 0.5 + 0.5 * Math.sin(bot.pulseAnim);
-      overlayCtx.strokeStyle = `rgba(239, 68, 68, ${0.5 + 0.5 * pulse})`;
-      overlayCtx.lineWidth = Math.max(2.0, r * 0.2);
-      overlayCtx.stroke();
-    }
-
-    // 4. White outer chassis & rim (matching default bot)
-    const borderWidth = Math.max(1.8, r * 0.20);
-    const innerR = Math.max(1.5, r - borderWidth);
-
-    overlayCtx.beginPath();
-    overlayCtx.arc(bot.x, bot.y, r, 0, Math.PI * 2);
-    if (isFull || bot.state === 'returning') {
-      const pulse = 0.5 + 0.5 * Math.sin(bot.pulseAnim);
-      overlayCtx.fillStyle = `rgb(255, ${Math.floor(255 - pulse * 140)}, ${Math.floor(255 - pulse * 140)})`;
+    // 1. Draw Bottom image (Base under which pixels are cleaning)
+    if (bobBottomImg.complete && bobBottomImg.naturalWidth > 0) {
+      overlayCtx.save();
+      overlayCtx.translate(bot.x, bot.y);
+      overlayCtx.rotate(rotation);
+      overlayCtx.drawImage(bobBottomImg, -r, -r, r * 2, r * 2);
+      overlayCtx.restore();
     } else {
-      overlayCtx.fillStyle = '#ffffff'; // white body like default bot
+      overlayCtx.beginPath();
+      overlayCtx.arc(bot.x, bot.y, r, 0, Math.PI * 2);
+      overlayCtx.fillStyle = '#a2a2a2';
+      overlayCtx.fill();
     }
-    overlayCtx.fill();
 
-    // 5. Inner canister with dust & dirt fills (matches default bot off-white background)
+    // 2. Draw Top image (Visual lid hovering above base with same orientation)
     overlayCtx.save();
-    overlayCtx.beginPath();
-    overlayCtx.arc(bot.x, bot.y, innerR, 0, Math.PI * 2);
-    overlayCtx.clip();
+    overlayCtx.translate(bot.x, bot.y + topOffsetY);
 
-    overlayCtx.fillStyle = '#ebf0f5'; // clean off-white interior like default bot
-    overlayCtx.fill();
-
-    const fillFracDust = Math.min(1.0, (bot.storedDust || 0) / bot.capacity);
-    const fillFracDirt = Math.min(1.0, (bot.storedDirt || 0) / bot.capacity);
-    const bottomY = bot.y + innerR;
-    const canisterH = innerR * 2;
-
-    if (fillFracDust > 0.005) {
-      const dustH = canisterH * fillFracDust;
-      overlayCtx.fillStyle = '#9ca3af';
-      overlayCtx.fillRect(bot.x - innerR, bottomY - dustH, innerR * 2, dustH);
+    // Draw Top Sprite
+    overlayCtx.save();
+    overlayCtx.rotate(rotation);
+    if (bobTopImg.complete && bobTopImg.naturalWidth > 0) {
+      overlayCtx.drawImage(bobTopImg, -r, -r, r * 2, r * 2);
+    } else {
+      overlayCtx.beginPath();
+      overlayCtx.arc(0, 0, r * 0.96, 0, Math.PI * 2);
+      overlayCtx.fillStyle = '#ffffff';
+      overlayCtx.fill();
     }
+    overlayCtx.restore();
 
-    if (fillFracDirt > 0.005) {
-      const dustH = canisterH * fillFracDust;
-      const dirtH = canisterH * fillFracDirt;
-      overlayCtx.fillStyle = '#b8624a';
-      overlayCtx.fillRect(bot.x - innerR, bottomY - dustH - dirtH, innerR * 2, dirtH);
+    // Fill top canister with dust & dirt content (only top part, like main bot)
+    const dustRatio = Math.min(1.0, Math.max(0.0, (bot.storedDust || 0) / bot.capacity));
+    const dirtRatio = Math.min(1.0 - dustRatio, Math.max(0.0, (bot.storedDirt || 0) / bot.capacity));
+
+    if (dustRatio > 0.001 || dirtRatio > 0.001) {
+      const canisterH = r * 2;
+      const bottomY = r;
+      const dustH = canisterH * dustRatio;
+      const dirtH = canisterH * dirtRatio;
+
+      overlayCtx.save();
+      overlayCtx.beginPath();
+      overlayCtx.arc(0, 0, r * 0.92, 0, Math.PI * 2);
+      overlayCtx.clip();
+
+      overlayCtx.globalCompositeOperation = 'multiply';
+
+      // 1. Dust fill (grey: #9ca3af)
+      if (dustH > 0) {
+        overlayCtx.fillStyle = '#9ca3af';
+        overlayCtx.fillRect(-r, bottomY - dustH, r * 2, dustH);
+      }
+
+      // 2. Dirt fill (brown: #b8624a)
+      if (dirtH > 0) {
+        overlayCtx.fillStyle = '#b8624a';
+        overlayCtx.fillRect(-r, bottomY - dustH - dirtH, r * 2, dirtH);
+      }
+      overlayCtx.restore();
+
+      // Meniscus highlights at top of dust and dirt
+      overlayCtx.save();
+      overlayCtx.beginPath();
+      overlayCtx.arc(0, 0, r * 0.92, 0, Math.PI * 2);
+      overlayCtx.clip();
+
+      if (dirtH > 0) {
+        overlayCtx.fillStyle = 'rgba(255, 235, 220, 0.7)';
+        overlayCtx.fillRect(-r, bottomY - dustH - dirtH, r * 2, Math.max(1.0, r * 0.04));
+      }
+      if (dustH > 0) {
+        overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        overlayCtx.fillRect(-r, bottomY - dustH, r * 2, Math.max(1.0, r * 0.04));
+      }
+      overlayCtx.restore();
     }
 
     overlayCtx.restore();
 
-    // 6. Front directional sensor/bumper notch pointing forward
-    const sensorDist = r - borderWidth * 0.5;
-    const sensorX = bot.x + Math.cos(bot.angle) * sensorDist;
-    const sensorY = bot.y + Math.sin(bot.angle) * sensorDist;
-    overlayCtx.beginPath();
-    overlayCtx.arc(sensorX, sensorY, Math.max(1.2, borderWidth * 0.45), 0, Math.PI * 2);
-    overlayCtx.fillStyle = (isFull || bot.state === 'returning') ? '#ef4444' : '#64748b';
-    overlayCtx.fill();
-
-    // 7. Label Tag (Shows status, no click prompts)
+    // 3. Label Tag (Status text above elevated top lid, no red outline)
     overlayCtx.font = '700 10px Outfit, sans-serif';
     overlayCtx.textAlign = 'center';
     overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.85)';
     overlayCtx.shadowBlur = 4;
 
-    const labelY = bot.y - r - 6;
+    const labelY = bot.y - r * (1.0 + Math.max(0, topOffsetRatio)) - 6;
     if (bot.state === 'returning') {
       overlayCtx.fillStyle = '#f87171';
       overlayCtx.fillText('Full -> Docking', bot.x, labelY);
@@ -1927,6 +1878,105 @@
     overlayCtx.restore();
   }
 
+  // Draw Default Player Vacuum (B.O.B. Bottom base & Top elevated lid)
+  function drawDefaultVacuum() {
+    const r = cleanerRadius;
+    const topOffsetRatio = (Values.getVacuumTopVisualOffset)
+      ? Values.getVacuumTopVisualOffset()
+      : ((Values.vacuum && Values.vacuum.topVisualOffset != null) ? Values.vacuum.topVisualOffset : 0.15);
+    const topOffsetY = -r * topOffsetRatio;
+
+    const shouldRotate = (Values.vacuum && Values.vacuum.rotateWithMovement !== false);
+    const rotation = shouldRotate ? (cleanerAngle - Math.PI * 0.5) : 0;
+
+    overlayCtx.save();
+    overlayCtx.imageSmoothingEnabled = true;
+    overlayCtx.imageSmoothingQuality = 'high';
+
+    // 1. Draw Bottom image (Base under which pixels are cleaning)
+    if (bobBottomImg.complete && bobBottomImg.naturalWidth > 0) {
+      overlayCtx.save();
+      overlayCtx.translate(cleanerPos.x, cleanerPos.y);
+      overlayCtx.rotate(rotation);
+      overlayCtx.drawImage(bobBottomImg, -r, -r, r * 2, r * 2);
+      overlayCtx.restore();
+    } else {
+      overlayCtx.beginPath();
+      overlayCtx.arc(cleanerPos.x, cleanerPos.y, r, 0, Math.PI * 2);
+      overlayCtx.fillStyle = '#a2a2a2';
+      overlayCtx.fill();
+    }
+
+    // 2. Draw Top image (Visual lid hovering above base with same orientation)
+    overlayCtx.save();
+    overlayCtx.translate(cleanerPos.x, cleanerPos.y + topOffsetY);
+
+    // Draw Top Sprite
+    overlayCtx.save();
+    overlayCtx.rotate(rotation);
+    if (bobTopImg.complete && bobTopImg.naturalWidth > 0) {
+      overlayCtx.drawImage(bobTopImg, -r, -r, r * 2, r * 2);
+    } else {
+      overlayCtx.beginPath();
+      overlayCtx.arc(0, 0, r * 0.96, 0, Math.PI * 2);
+      overlayCtx.fillStyle = '#ffffff';
+      overlayCtx.fill();
+    }
+    overlayCtx.restore();
+
+    // Fill top canister with dust & dirt content (only the top part, like before!)
+    const effectiveCap = getMaxVacuumCapacity();
+    const dustRatio = Math.min(1.0, Math.max(0.0, (Values.vacuum.storedDust || 0) / effectiveCap));
+    const dirtRatio = Math.min(1.0 - dustRatio, Math.max(0.0, (Values.vacuum.storedDirt || 0) / effectiveCap));
+
+    if (dustRatio > 0.001 || dirtRatio > 0.001) {
+      const canisterH = r * 2;
+      const bottomY = r;
+      const dustH = canisterH * dustRatio;
+      const dirtH = canisterH * dirtRatio;
+
+      overlayCtx.save();
+      overlayCtx.beginPath();
+      overlayCtx.arc(0, 0, r * 0.92, 0, Math.PI * 2);
+      overlayCtx.clip();
+
+      overlayCtx.globalCompositeOperation = 'multiply';
+
+      // 1. Dust fill (grey: #9ca3af)
+      if (dustH > 0) {
+        overlayCtx.fillStyle = '#9ca3af';
+        overlayCtx.fillRect(-r, bottomY - dustH, r * 2, dustH);
+      }
+
+      // 2. Dirt fill (brown: #b8624a)
+      if (dirtH > 0) {
+        overlayCtx.fillStyle = '#b8624a';
+        overlayCtx.fillRect(-r, bottomY - dustH - dirtH, r * 2, dirtH);
+      }
+      overlayCtx.restore();
+
+      // Meniscus highlights at top of dust and dirt (like before)
+      overlayCtx.save();
+      overlayCtx.beginPath();
+      overlayCtx.arc(0, 0, r * 0.92, 0, Math.PI * 2);
+      overlayCtx.clip();
+
+      if (dirtH > 0) {
+        overlayCtx.fillStyle = 'rgba(255, 235, 220, 0.7)';
+        overlayCtx.fillRect(-r, bottomY - dustH - dirtH, r * 2, Math.max(1.2, r * 0.04));
+      }
+      if (dustH > 0) {
+        overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        overlayCtx.fillRect(-r, bottomY - dustH, r * 2, Math.max(1.2, r * 0.04));
+      }
+      overlayCtx.restore();
+    }
+
+    overlayCtx.restore();
+
+    overlayCtx.restore();
+  }
+
   function updateAndDrawParticles() {
     overlayCtx.clearRect(0, 0, width, height);
 
@@ -1960,15 +2010,23 @@
       overlayCtx.restore();
     }
 
+    // Draw default vacuum (B.O.B. Bottom base & Top elevated lid)
+    drawDefaultVacuum();
+
     // Indicator tag directly above vacuum if full
     const maxCapacity = getMaxVacuumCapacity();
     const isFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
+    const topOffsetRatio = (Values.getVacuumTopVisualOffset)
+      ? Values.getVacuumTopVisualOffset()
+      : ((Values.vacuum && Values.vacuum.topVisualOffset != null) ? Values.vacuum.topVisualOffset : 0.15);
+    const labelY = cleanerPos.y - cleanerRadius * (1.0 + Math.max(0, topOffsetRatio)) - 8;
+
     if (isFull) {
       overlayCtx.save();
       overlayCtx.font = '700 11px Outfit, sans-serif';
       overlayCtx.textAlign = 'center';
       overlayCtx.fillStyle = 'rgba(239, 68, 68, 0.95)';
-      overlayCtx.fillText('FULL (Hold Space)', cleanerPos.x, cleanerPos.y - cleanerRadius - 8);
+      overlayCtx.fillText('FULL (Hold Space)', cleanerPos.x, labelY);
       overlayCtx.restore();
     }
 
@@ -1978,7 +2036,7 @@
       overlayCtx.font = '700 11px Outfit, sans-serif';
       overlayCtx.textAlign = 'center';
       overlayCtx.fillStyle = 'rgba(74, 222, 128, 0.95)';
-      overlayCtx.fillText(Values.vacuum.stored > 0.0001 ? 'STORING (Locked)...' : 'LOCKED (Space held)...', cleanerPos.x, cleanerPos.y - cleanerRadius - 8);
+      overlayCtx.fillText(Values.vacuum.stored > 0.0001 ? 'STORING (Locked)...' : 'LOCKED (Space held)...', cleanerPos.x, labelY);
       overlayCtx.restore();
     }
 
@@ -2141,6 +2199,8 @@
 
     stationStorage.dust = 0.0;
     stationStorage.dirt = 0.0;
+    cleanerAngle = Math.PI * 0.5;
+    Values.cleanerAngle = cleanerAngle;
     updateRoomGeometry();
 
     initTextures();
@@ -2265,6 +2325,16 @@
 
         // Keep vacuum bounded strictly inside the room or station alcove
         clampCleanerToPlayfield(cleanerPos, cleanerRadius);
+
+        // Turn towards movement direction
+        if (dist > 1.0) {
+          const targetAngle = Math.atan2(dy, dx);
+          let diff = targetAngle - cleanerAngle;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          cleanerAngle += diff * Math.min(1.0, 18.0 * dt);
+          Values.cleanerAngle = cleanerAngle;
+        }
       }
 
       // Convert cleaner position to grid coords (cleans under the suck zone whether moving or stationary!)
@@ -2751,6 +2821,8 @@
 
   // --- Bootstrap Game ---
   function init() {
+    cleanerAngle = Math.PI * 0.5;
+    Values.cleanerAngle = cleanerAngle;
     updateRoomGeometry();
     if (!initWebGL()) return;
     initTextures();

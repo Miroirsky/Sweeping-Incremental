@@ -25,7 +25,11 @@ var Values = {
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
     speed: 0.1,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.5          // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    size: 0.5,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    topVisualOffset: 0.2, // Visual vertical offset of the top lid (fraction of vacuum radius, e.g. 0.15 = 15% up)
+    rotateWithMovement: true, // Whether the vacuum rotates to face movement direction
+    bottomImage: "Assets/Icons/B.O.B. Bottom.png", // Bottom/base sprite image
+    topImage: "Assets/Icons/B.O.B. Top.png"         // Top/lid sprite image
   },
 
   // Automatic Vacuum Robot Configuration
@@ -36,7 +40,8 @@ var Values = {
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
     speed: 0.01,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.1          // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    size: 0.1,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    topVisualOffset: 0.15 // Visual vertical offset of the top lid (fraction of vacuum radius)
   },
 
   // Room Geometry, Resolution & Mass Calibration
@@ -249,6 +254,18 @@ var Values = {
   // Effective auto vacuum cleaning rate in g/s distributed across pixels under vacuum
   getEffectiveAutoVacuumCleanRate() {
     return (this.autoVacuum && this.autoVacuum.cleanRate != null) ? this.autoVacuum.cleanRate : 0.1;
+  },
+
+  // Visual vertical offset for top lid of default vacuum (fraction of vacuum radius)
+  getVacuumTopVisualOffset() {
+    return (this.vacuum && this.vacuum.topVisualOffset != null) ? this.vacuum.topVisualOffset : 0.15;
+  },
+
+  // Visual vertical offset for top lid of auto vacuum (fraction of vacuum radius)
+  getAutoVacuumTopVisualOffset() {
+    return (this.autoVacuum && this.autoVacuum.topVisualOffset != null)
+      ? this.autoVacuum.topVisualOffset
+      : this.getVacuumTopVisualOffset();
   },
 
   // Effective vacuum capacity in grams (e.g. 0.5 * (1 + level * 0.5))
