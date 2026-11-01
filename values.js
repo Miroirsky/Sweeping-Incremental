@@ -18,14 +18,14 @@ var Values = {
 
   // Vacuum Robot Configuration
   vacuum: {
-    cleanRate: 0.1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
+    cleanRate: 1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
     storeRate: 1,    // Transfer rate into infinite storage while holding Space (g/s)
     capacity: 0.5,     // Base vacuum canister capacity (g)
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
     speed: 0.01,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.1,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    size: 0.5,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
     topVisualOffset: 0.2, // Visual vertical offset of the top lid (fraction of vacuum radius, e.g. 0.15 = 15% up)
     rotateWithMovement: true, // Whether the vacuum rotates to face movement direction
     bottomImage: "Assets/Icons/B.O.B. Bottom.png", // Bottom/base sprite image
@@ -241,6 +241,25 @@ var Values = {
         getStat(upg) {
           return `${(Values.getEffectiveSuckMultiplier() * 100).toFixed(0)}%`;
         }
+      },
+      autoEfficiency: {
+        name: "Auto Efficiency",
+        image: "Assets/Upgrades/Dirt/Auto Efficiency.png",
+        currency: "dirt",
+        require: { upgrade: "dirt", level: 1 },
+        effect: 0.5,
+        cost: 1.0,
+        mult: 1.5,
+        level: 0,
+        getDesc(upg) {
+          return `+${(upg.effect * 100).toFixed(0)}% auto cleaner efficiency`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Auto Rate`;
+        },
+        getStat(upg) {
+          return `${Values.getEffectiveAutoVacuumCleanRate().toFixed(2)}g/s`;
+        }
       }
     }
   },
@@ -263,7 +282,11 @@ var Values = {
 
   // Effective auto vacuum cleaning rate in g/s distributed across pixels under vacuum
   getEffectiveAutoVacuumCleanRate() {
-    return (this.autoVacuum && this.autoVacuum.cleanRate != null) ? this.autoVacuum.cleanRate : 0.1;
+    const upg = (this.shops.dirtShop && (this.shops.dirtShop.autoEfficiency || this.shops.dirtShop.AutoEfficiency)) ||
+                (this.shops.dustShop && (this.shops.dustShop.autoEfficiency || this.shops.dustShop.AutoEfficiency));
+    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const baseRate = (this.autoVacuum && this.autoVacuum.cleanRate != null) ? this.autoVacuum.cleanRate : 0.1;
+    return baseRate * multiplier;
   },
 
   // Visual vertical offset for top lid of default vacuum (fraction of vacuum radius)
@@ -329,7 +352,8 @@ var Values = {
                     (key === 'capacitymult' ? 'capacity' :
                     (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
                     (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' :
-                    (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' : key))));
+                    (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
+                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))));
       upg = (this.shops.dustShop && this.shops.dustShop[alias]) ||
             (this.shops.dirtShop && this.shops.dirtShop[alias]);
     }
@@ -352,7 +376,8 @@ var Values = {
                     (key === 'capacitymult' ? 'capacity' :
                     (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
                     (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' :
-                    (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' : key))));
+                    (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
+                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))));
       if (shop[alias]) return shop[alias];
     }
     return null;

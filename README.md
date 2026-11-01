@@ -40,7 +40,11 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
   - **Clean Rate Upgrade**: Adds **+50%** cleaning speed. Cost: `0.5g * 1.5^lvl`.
   - **Capacity Mult Upgrade**: Adds **+0.5x** to vacuum canister space multiplier. Cost: `0.5g * 1.5^lvl`.
   - **Store Rate Upgrade**: Adds **+50%** transfer speed while holding Space. Cost: `0.5g * 1.5^lvl`.
-  - **Dirt Upgrade**: One-time permanent unlock. Cost: `0.5g`.
+  - **Dirt Upgrade**: One-time permanent unlock. Cost: `25g`.
+  - **Auto Cleaner Upgrade**: Autonomous mini-cleaner bot that wanders, vacuums, and docks at station. Cost: `2.0g * 50^lvl`.
+- **Dirt Shop (Dirt Currency Only)**:
+  - **Suck Zone Upgrade**: Expands suction radius by **+20%**. Cost: `1.0g * 10^lvl` dirt.
+  - **Auto Efficiency Upgrade**: Gives **+50%** cleaning efficiency to automatic cleaner bots. Cost: `1.0g * 1.5^lvl` dirt.
 - **Growing Dirt Zones Wave System**:
   - Dirt does **not generate constantly**. When total dirt drops below **70% of max dirt (70g)**, it activates a generation wave that grows dirt **up to 100% (100g)**.
   - While between 70g and 100g (when not in a wave), dirt generation remains paused until you clean it below 70g again.
