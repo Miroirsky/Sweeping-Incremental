@@ -420,7 +420,7 @@ canvas#overlay-canvas {
   letter-spacing: 0.4px;
 }
 
-/* Bottom Menu Dock: brown squares with light brown outlines */
+/* Bottom Menu Dock: moves to top when shop is open */
 .bottom-menu-dock {
   position: absolute;
   bottom: 18px;
@@ -429,8 +429,13 @@ canvas#overlay-canvas {
   display: flex;
   align-items: center;
   gap: 16px;
-  z-index: 25;
+  z-index: 50;
   pointer-events: auto;
+  transition: bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s ease;
+}
+
+body.shop-open .bottom-menu-dock {
+  bottom: calc(100vh - 74px);
 }
 
 .menu-square-btn {
@@ -446,7 +451,7 @@ canvas#overlay-canvas {
   justify-content: center;
   gap: 3px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .menu-square-btn:hover {
@@ -460,241 +465,264 @@ canvas#overlay-canvas {
   transform: translateY(1px);
 }
 
-/* The icon is a grey circle */
-.grey-circle-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #9ca3af;
-  border: 1.5px solid #d1d5db;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s ease;
+body.shop-open .menu-square-btn {
+  border-color: #ffd080;
+  background: #4a2c1a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 16px rgba(255, 208, 128, 0.35);
 }
 
-.grey-circle-icon.small {
-  width: 16px;
-  height: 16px;
+/* Shop menu icon: Dust icon */
+.menu-btn-icon {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.menu-square-btn:hover .menu-btn-icon,
+body.shop-open .menu-square-btn .menu-btn-icon {
+  transform: scale(1.15);
+}
+
+/* Inventory & Storage Icons */
+.inventory-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
   display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
-.menu-square-btn:hover .grey-circle-icon {
-  transform: scale(1.1);
-  background: #b0b4be;
+.storage-header-icon {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
-.menu-btn-label {
-  font-size: 9px;
-  font-weight: 700;
-  color: #f5ede6;
-  letter-spacing: 0.6px;
+.hud-stat-icon {
+  width: 17px;
+  height: 17px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
-/* Shop Modal Window: brown square card with light brown outlines & white title (no radius) */
-.shop-modal {
+/* Upgrades Card System Tray (at bottom of screen) */
+.shop-cards-tray {
   position: absolute;
-  bottom: 84px;
+  bottom: clamp(10px, 2.5vh, 26px);
   left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
+  transform: translateX(-50%) translateY(0);
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: clamp(6px, 1.2vw, 18px);
+  max-width: 98vw;
+  z-index: 40;
   pointer-events: auto;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
 }
 
-.shop-modal.hidden {
+.shop-cards-tray.hidden {
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 15px);
+  transform: translateX(-50%) translateY(120%);
 }
 
-.shop-card {
-  width: 320px;
-  background: #331e13;
-  border: 2.5px solid #a6754d;
+/* Upgrade Card - strictly 1000x1500 (2:3 aspect ratio), transparent background, no outlines, window-adaptive */
+.upgrade-card {
+  position: relative;
+  width: clamp(55px, min(14.5vw, 24vh), 160px);
+  aspect-ratio: 1000 / 1500;
+  container-type: inline-size;
   border-radius: 0;
-  padding: 16px 18px;
-  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.65);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.shop-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid rgba(166, 117, 77, 0.4);
-  padding-bottom: 10px;
-}
-
-.shop-header-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* White title */
-.shop-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: 1px;
-}
-
-.shop-close-btn {
+  overflow: visible;
   background: transparent;
   border: none;
-  color: #c9b19e;
-  font-size: 20px;
+  outline: none;
+  box-shadow: none;
   cursor: pointer;
-  line-height: 1;
-  padding: 0 4px;
-  transition: color 0.15s;
-}
-
-.shop-close-btn:hover {
-  color: #ffffff;
-}
-
-.shop-items {
+  user-select: none;
+  transform-style: preserve-3d;
+  will-change: transform, filter;
+  transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+              filter 0.35s ease;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 380px;
-  overflow-y: auto;
-  padding-right: 4px;
 }
 
-.shop-item {
-  background: #25150d;
-  border: 1.5px solid #8c5d3b;
-  border-radius: 0;
-  padding: 10px 12px;
+.upgrade-card:focus-visible {
+  transform: translateY(-10px) scale(1.05);
+  filter: drop-shadow(0 16px 28px rgba(0, 0, 0, 0.8));
+}
+
+.upgrade-card:active {
+  transform: translateY(-4px) scale(0.99) !important;
+}
+
+/* Card Artwork Image - 1000x1500 ratio with transparent background */
+.card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  background: transparent;
+  border: none;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.5));
+  transition: filter 0.25s ease;
+}
+
+.upgrade-card:hover .card-img,
+.upgrade-card:focus-visible .card-img {
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.8)) brightness(1.06);
+}
+
+/* Top Info Bar: Level & Effect Display (Only displayed on hover, transparent background) */
+.card-top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: clamp(5px, 4.5cqw, 10px) clamp(5px, 4.5cqw, 10px) clamp(8px, 6cqw, 14px);
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, 2cqw, 5px);
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.upgrade-card:hover .card-top-bar,
+.upgrade-card:focus-visible .card-top-bar {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.card-top-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
 }
 
-.item-info {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  flex: 1;
-}
-
-.item-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.item-name {
-  font-size: 13px;
+.card-lvl-badge {
+  background: rgba(30, 18, 12, 0.85);
+  color: #ffd080;
+  font-size: clamp(7.5px, 6.5cqw, 10px);
   font-weight: 700;
-  color: #f7ebe1;
-}
-
-.item-level {
-  font-size: 10px;
-  font-weight: 600;
-  color: #e5b98a;
-  background: rgba(166, 117, 77, 0.3);
-  padding: 1px 5px;
-  border-radius: 0;
-}
-
-.item-desc {
-  font-size: 11px;
-  color: #bfa895;
-}
-
-.item-stat-row {
-  font-size: 10px;
-  color: #d1bdae;
-}
-
-.item-stat-row strong {
-  color: #7bf1a8;
-}
-
-.buy-btn {
-  background: #6a4427;
-  border: 1.5px solid #a6754d;
-  border-radius: 0;
-  padding: 8px 12px;
-  cursor: pointer;
-  color: #ffffff;
-  font-family: inherit;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-  min-width: 68px;
-}
-
-.buy-btn:hover:not(:disabled) {
-  background: #855733;
-  border-color: #c48c5c;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.buy-btn:disabled {
-  background: #2a180e;
-  border-color: #55341e;
-  color: #7a6353;
-  cursor: not-allowed;
-  opacity: 0.65;
-}
-
-.buy-btn.unlocked-btn,
-.buy-btn:disabled.unlocked-btn {
-  background: #1e3a24;
-  border-color: #4ade80;
-  color: #86efac;
-  cursor: default;
-  opacity: 1;
-}
-
-.buy-btn.unlocked-btn .buy-cost,
-.buy-btn:disabled.unlocked-btn .buy-cost {
-  color: #4ade80;
-}
-
-.buy-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
+  padding: clamp(1px, 1.5cqw, 3px) clamp(4px, 4cqw, 7px);
+  border-radius: 4px;
   letter-spacing: 0.5px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 208, 128, 0.35);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
 }
 
-.buy-cost {
-  font-size: 11px;
+.card-effect-desc {
+  color: #7bf1a8;
   font-weight: 700;
-  color: #ffde82;
-  font-variant-numeric: tabular-nums;
+  font-size: clamp(7.5px, 6.5cqw, 11px);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 0 6px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
 }
 
-.buy-btn:disabled .buy-cost {
-  color: #8c7362;
-}
-
-.shop-footer {
-  border-top: 1px solid rgba(166, 117, 77, 0.3);
-  padding-top: 8px;
+.card-effect-row {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  font-size: clamp(7.5px, 6.5cqw, 11px);
+  gap: 4px;
+  white-space: nowrap;
 }
 
-.shop-wallet {
-  font-size: 11px;
-  color: #c9b19e;
+.card-stat-label {
+  font-size: clamp(7px, 6cqw, 10px);
+  color: #e5d7cc;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
 }
 
-.shop-wallet strong {
-  color: #7bf1a8;
+.card-stat-val {
+  color: #ffffff;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95), 0 0 6px rgba(0, 0, 0, 0.85);
+}
+
+/* Price Display - Smaller, bottom-left, no background, no outline */
+.card-price-overlay {
+  position: absolute;
+  bottom: clamp(5px, 4cqw, 10px);
+  left: clamp(6px, 4.5cqw, 11px);
+  right: auto;
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  z-index: 3;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.card-price-val {
+  font-size: clamp(8px, 6.5cqw, 11px);
+  font-weight: 700;
+  color: #ffd080;
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 6px rgba(0, 0, 0, 0.9);
+  letter-spacing: 0.3px;
+  display: inline-block;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.upgrade-card:hover .card-price-val,
+.upgrade-card:focus-visible .card-price-val {
+  transform: scale(1.08);
+}
+
+.upgrade-card.can-afford .card-price-val {
+  color: #86efac;
+}
+
+.upgrade-card.cannot-afford .card-price-val {
+  color: #fca5a5;
+}
+
+/* Card Purchase / Shake Animations */
+@keyframes cardPurchased {
+  0% { transform: translateY(-12px) scale(1.04); }
+  40% { transform: translateY(-18px) scale(1.12); filter: drop-shadow(0 0 25px rgba(123, 241, 168, 0.85)) brightness(1.15); }
+  100% { transform: translateY(-12px) scale(1.04); }
+}
+
+@keyframes cardShake {
+  0%, 100% { transform: translateY(-12px) translateX(0); }
+  20%, 60% { transform: translateY(-12px) translateX(-6px); }
+  40%, 80% { transform: translateY(-12px) translateX(6px); }
+}
+
+.upgrade-card.purchased-anim {
+  animation: cardPurchased 0.35s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.upgrade-card.shake-anim {
+  animation: cardShake 0.35s ease;
 }
 
 .icon-btn {

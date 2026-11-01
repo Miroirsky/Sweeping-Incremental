@@ -18,14 +18,14 @@ var Values = {
 
   // Vacuum Robot Configuration
   vacuum: {
-    cleanRate: 0.1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
-    storeRate: 1.0,    // Transfer rate into infinite storage while holding Space (g/s)
-    capacity: 0.5,     // Base vacuum canister capacity (g)
+    cleanRate: 100,    // Rate of cleaning distributed across pixels under vacuum (g/s)
+    storeRate: 100,    // Transfer rate into infinite storage while holding Space (g/s)
+    capacity: 100,     // Base vacuum canister capacity (g)
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
-    speed: 0.01,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.1          // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    speed: 0.5,       // Base movement speed ratio (fraction of screen dimension per second)
+    size: 0.5          // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
   },
 
   // Room Geometry, Resolution & Mass Calibration
@@ -73,74 +73,113 @@ var Values = {
     sampleIntervalMs: 250
   },
 
-  // Dynamic Upgrades & Shop Configurations
+  // Dynamic Upgrades & Shop Configurations (Card System)
   shops: {
     dustShop: {
-      Speed: {
-        name: "Vacuum Speed",
+      capacity: {
+        name: "Capacity",
+        image: "Assets/Upgrades/Dust/Capacity.png",
         effect: 0.5,
         cost: 0.5,
         mult: 1.5,
         level: 0,
         getDesc(upg) {
-          return `+${(upg.effect * 1.0).toFixed(1)}% screen/s movement speed`;
+          return `+${(upg.effect * 100).toFixed(0)}% canister capacity`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Capacity`;
         },
         getStat(upg) {
-          return `${(Values.getEffectiveSpeed() * 100).toFixed(1)}% / s`;
+          return `${Values.getEffectiveCapacity().toFixed(2)}g`;
         }
       },
-      CleanRate: {
-        name: "Clean Efficiency",
+      efficiency: {
+        name: "Efficiency",
+        image: "Assets/Upgrades/Dust/Efficiency.png",
         effect: 0.5,
         cost: 0.5,
         mult: 1.5,
         level: 0,
         getDesc(upg) {
-          return `+${(upg.effect * 100).toFixed(0)}% cleaning efficiency`;
+          return `+${(upg.effect * 100).toFixed(0)}% cleaning rate`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Clean Rate`;
         },
         getStat(upg) {
-          return `${Values.getEffectiveCleanRate().toFixed(2)}g / s`;
+          return `${Values.getEffectiveCleanRate().toFixed(2)}g/s`;
         }
       },
-      CapacityMult: {
-        name: "Capacity Mult",
+      speed: {
+        name: "Speed",
+        image: "Assets/Upgrades/Dust/Speed.png",
         effect: 0.5,
         cost: 0.5,
         mult: 1.5,
         level: 0,
         getDesc(upg) {
-          return `+${(upg.effect * 100).toFixed(0)}% canister space multiplier`;
+          return `+${(upg.effect * 100).toFixed(0)}% vacuum movement speed`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Speed`;
         },
         getStat(upg) {
-          return `${Values.getEffectiveCapacity().toFixed(2)}g (${(1 + upg.level * upg.effect).toFixed(1)}x)`;
+          return `${(Values.getEffectiveSpeed() * 100).toFixed(1)}%/s`;
         }
       },
-      StoreRate: {
-        name: "Store Rate",
+      storingSpeed: {
+        name: "Storing Speed",
+        image: "Assets/Upgrades/Dust/Storing Speed.png",
         effect: 0.5,
         cost: 0.5,
         mult: 1.5,
         level: 0,
         getDesc(upg) {
-          return `+${(upg.effect * 100).toFixed(0)}% transfer speed while storing`;
+          return `+${(upg.effect * 100).toFixed(0)}% storing transfer rate`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Store Rate`;
         },
         getStat(upg) {
-          return `${Values.getEffectiveStoreRate().toFixed(2)}g / s`;
+          return `${Values.getEffectiveStoreRate().toFixed(2)}g/s`;
         }
       },
-      Dirt: {
-        name: "Dirt Zones",
+      suckZone: {
+        name: "Suck Zone",
+        image: "Assets/Upgrades/Dust/Suck Zone.png",
+        effect: 0.2,
+        cost: 1.0,
+        mult: 10.0,
+        level: 0,
+        getDesc(upg) {
+          return `+${(upg.effect * 100).toFixed(0)}% suck zone radius`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Suck Zone`;
+        },
+        getStat(upg) {
+          return `${(Values.getEffectiveSuckMultiplier() * 100).toFixed(0)}%`;
+        }
+      },
+      dirt: {
+        name: "Dirt",
+        image: "Assets/Upgrades/Dust/Dirt.png",
         isUnlock: true,
         maxLevel: 1,
+        effect: 1.0,
         cost: 0.5,
+        mult: 1.5,
         level: 0,
         getDesc(upg) {
           return upg.level === 0
-            ? "Unlocks organic dirt zones (when dirt falls below 70%, generates up to 100%)"
-            : "Organic dirt zones unlocked (generates up to 100g when under 70g)";
+            ? "Unlocks organic dirt zones up to 100g"
+            : "Organic dirt zones active (generates up to 100g)";
+        },
+        getEffect(upg) {
+          return upg.level === 0 ? "Unlock Dirt" : "Dirt Active";
         },
         getStat(upg) {
-          return upg.level === 0 ? "Locked" : "Unlocked";
+          return upg.level === 0 ? "Locked" : "100g Max";
         }
       }
     }
@@ -150,30 +189,37 @@ var Values = {
 
   // Effective vacuum movement speed ratio (e.g. 0.01 * (1 + level * 0.5))
   getEffectiveSpeed() {
-    const upg = this.shops.dustShop.Speed;
+    const upg = this.shops.dustShop.speed || this.shops.dustShop.Speed;
     const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
     return this.vacuum.speed * multiplier;
   },
 
   // Effective cleaning rate in g/s distributed across pixels under vacuum
   getEffectiveCleanRate() {
-    const upg = this.shops.dustShop.CleanRate;
+    const upg = this.shops.dustShop.efficiency || this.shops.dustShop.CleanRate || this.shops.dustShop.Efficiency;
     const multiplier = upg ? (1.0 + (upg.level * upg.effect)) : 1.0;
     return (this.vacuum.cleanRate != null ? this.vacuum.cleanRate : 0.1) * multiplier;
   },
 
   // Effective vacuum capacity in grams (e.g. 0.5 * (1 + level * 0.5))
   getEffectiveCapacity() {
-    const upg = this.shops.dustShop.CapacityMult;
+    const upg = this.shops.dustShop.capacity || this.shops.dustShop.Capacity || this.shops.dustShop.CapacityMult;
     const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
     return this.vacuum.capacity * multiplier;
   },
 
-  // Effective store rate in g/s (e.g. 1.0 * (1 + level * 0.5))
+  // Effective store rate in g/s (e.g. 100 * (1 + level * 0.5))
   getEffectiveStoreRate() {
-    const upg = this.shops.dustShop.StoreRate;
-    const multiplier = upg ? (1.0 + (upg.level * upg.effect)) : 1.0;
-    return this.vacuum.storeRate * multiplier;
+    const upg = this.shops.dustShop.storingSpeed || this.shops.dustShop['storing speed'] || this.shops.dustShop.storing_speed || this.shops.dustShop.StoringSpeed;
+    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    return (this.vacuum.storeRate != null ? this.vacuum.storeRate : 1.0) * multiplier;
+  },
+
+  // Effective suck zone radius multiplier (1.0 + level * 0.20)
+  getEffectiveSuckMultiplier() {
+    const upg = this.shops.dustShop.suckZone || this.shops.dustShop['suck zone'] || this.shops.dustShop.suck_zone || this.shops.dustShop.SuckZone;
+    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    return multiplier;
   },
 
   // Dirt refill trigger threshold in grams (e.g. 100g * 0.70 = 70g)
@@ -190,7 +236,14 @@ var Values = {
 
   // Current purchase cost for an upgrade (base cost * mult^level)
   getUpgradeCost(upgradeKey) {
-    const upg = this.shops.dustShop[upgradeKey];
+    if (!upgradeKey) return 0;
+    const key = upgradeKey.toLowerCase();
+    const upg = this.shops.dustShop[upgradeKey] ||
+                this.shops.dustShop[key] ||
+                this.shops.dustShop[key === 'cleanrate' ? 'efficiency' :
+                                   (key === 'capacitymult' ? 'capacity' :
+                                   (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
+                                   (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' : key)))];
     if (!upg) return 0;
     if (upg.isUnlock && upg.level >= 1) return Infinity;
     return upg.cost * Math.pow(upg.mult || 1, upg.level);

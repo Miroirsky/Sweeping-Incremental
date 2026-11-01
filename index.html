@@ -19,10 +19,10 @@
   <!-- Top Right Dust & Dirt Indicators & Sound Toggle -->
   <header class="hud-top-right">
     <div class="hud-card indicator-card">
-      <span class="stat-icon">🧹</span>
+      <img src="Assets/Icons/Dust.png" alt="Dust" class="hud-stat-icon" draggable="false">
       <span id="dust-indicator" class="stat-text">Dust Cleared: 0.0g [0.0%]</span>
       <div class="dirt-badge" id="dirt-badge" title="Dirt on Screen (Capped at 100g)">
-        <span class="dirt-icon">🌱</span>
+        <img src="Assets/Icons/Dirt.png" alt="Dirt" class="hud-stat-icon" draggable="false">
         <span id="dirt-indicator" class="dirt-text">Dirt: 0.0 / 100g</span>
       </div>
     </div>
@@ -34,7 +34,7 @@
   <!-- Bottom Left Robot Storage Progress Bar (Grey for Dust, Brown for Dirt) -->
   <aside class="robot-storage-sidebar">
     <div id="robot-storage-card" class="storage-card">
-      <div class="storage-title">ROBOT</div>
+      <div class="storage-title">B.O.B.</div>
       
       <div class="storage-bar-outer">
         <div class="storage-bar-track">
@@ -46,8 +46,8 @@
       <div class="storage-footer">
         <span id="robot-storage-value" class="storage-text">0.00 / 0.50g</span>
         <div class="storage-breakdown">
-          <span class="mini-tag dust-tag"><span class="dot grey-dot"></span><span id="robot-dust-text">0.00g</span></span>
-          <span class="mini-tag dirt-tag"><span class="dot brown-dot"></span><span id="robot-dirt-text">0.00g</span></span>
+          <span class="mini-tag dust-tag"><img src="Assets/Icons/Dust.png" alt="Dust" class="inventory-icon" draggable="false"><span id="robot-dust-text">0.00g</span></span>
+          <span class="mini-tag dirt-tag"><img src="Assets/Icons/Dirt.png" alt="Dirt" class="inventory-icon" draggable="false"><span id="robot-dirt-text">0.00g</span></span>
         </div>
       </div>
     </div>
@@ -57,7 +57,7 @@
   <aside class="storage-center-right" id="storage-indicator-container">
     <!-- Dust Storage Card -->
     <div class="storage-card-indicator dust-storage-card" id="storage-dust-card" title="Stored Dust (Infinite)">
-      <div class="storage-indicator-label"><span class="dot grey-dot"></span>DUST</div>
+      <div class="storage-indicator-label"><img src="Assets/Icons/Dust.png" alt="Dust" class="storage-header-icon" draggable="false">DUST</div>
       <div class="storage-indicator-val-row">
         <span id="storage-dust-value" class="storage-value-text">0.0g</span>
       </div>
@@ -65,40 +65,23 @@
 
     <!-- Dirt Storage Card -->
     <div class="storage-card-indicator dirt-storage-card" id="storage-dirt-card" title="Stored Dirt (Infinite)">
-      <div class="storage-indicator-label"><span class="dot brown-dot"></span>DIRT</div>
+      <div class="storage-indicator-label"><img src="Assets/Icons/Dirt.png" alt="Dirt" class="storage-header-icon" draggable="false">DIRT</div>
       <div class="storage-indicator-val-row">
         <span id="storage-dirt-value" class="storage-value-text">0.0g</span>
       </div>
     </div>
   </aside>
 
-  <!-- Bottom Menu Dock: brown squares with light brown outlines and grey circle icon -->
-  <nav class="bottom-menu-dock">
-    <button id="shop-btn" class="menu-square-btn" title="Open Dust Shop (B)">
-      <div class="grey-circle-icon"></div>
+  <!-- Bottom Menu Dock: brown squares with light brown outlines and dust icon for shop -->
+  <nav class="bottom-menu-dock" id="bottom-menu-dock">
+    <button id="shop-btn" class="menu-square-btn" title="Toggle Shop (E)" aria-label="Toggle Shop">
+      <img src="Assets/Icons/Dust.png" alt="Shop" class="menu-btn-icon" draggable="false">
       <span class="menu-btn-label">SHOP</span>
     </button>
   </nav>
 
-  <!-- Shop Modal: Brown square card with light brown outlines & white title -->
-  <div id="shop-modal" class="shop-modal hidden">
-    <div class="shop-card">
-      <div class="shop-header">
-        <div class="shop-header-title-row">
-          <div class="grey-circle-icon small"></div>
-          <h2 class="shop-title">DUST SHOP</h2>
-        </div>
-        <button id="shop-close-btn" class="shop-close-btn" aria-label="Close Shop">&times;</button>
-      </div>
-
-      <!-- Dynamically generated & updated upgrades from Values.shops.dustShop -->
-      <div class="shop-items" id="shop-items"></div>
-
-      <div class="shop-footer">
-        <span class="shop-wallet">Stored Mass: <strong id="shop-stored-dust">0.0g</strong></span>
-      </div>
-    </div>
-  </div>
+  <!-- Upgrades Card System Tray (appears at bottom of screen when shop is opened) -->
+  <div id="shop-cards-tray" class="shop-cards-tray hidden" role="region" aria-label="Shop Upgrades"></div>
 
   <!-- Instruction Hint -->
   <div id="hint-overlay" class="hint-overlay">
