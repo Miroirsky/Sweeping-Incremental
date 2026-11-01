@@ -149,7 +149,7 @@ var Values = {
         image: "Assets/Upgrades/Dust/Suck Zone.png",
         effect: 0.2,
         cost: 1.0,
-        mult: 10.0,
+        mult: 5.0,
         level: 0,
         getDesc(upg) {
           return `+${(upg.effect * 100).toFixed(0)}% suck zone radius`;
