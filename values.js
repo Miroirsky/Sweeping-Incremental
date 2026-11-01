@@ -18,9 +18,20 @@ var Values = {
 
   // Vacuum Robot Configuration
   vacuum: {
+    cleanRate: 10.0,    // Rate of cleaning distributed across pixels under vacuum (g/s)
+    storeRate: 10.0,    // Transfer rate into infinite storage while holding Space (g/s)
+    capacity: 10.0,     // Base vacuum canister capacity (g)
+    stored: 0,         // Current total mass in canister (dust + dirt)
+    storedDust: 0,     // Current dust mass in canister (g)
+    storedDirt: 0,     // Current dirt mass in canister (g)
+    speed: 0.1,       // Base movement speed ratio (fraction of screen dimension per second)
+    size: 0.5          // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+  },
+
+  // Automatic Vacuum Robot Configuration
+  autoVacuum: {
     cleanRate: 0.1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
-    storeRate: 0.1,    // Transfer rate into infinite storage while holding Space (g/s)
-    capacity: 0.5,     // Base vacuum canister capacity (g)
+    capacity: 1.0,     // Base vacuum canister capacity (g)
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
@@ -52,7 +63,7 @@ var Values = {
 
   // Organic Dirt Zones & Wave Refill Settings
   dirt: {
-    refillThresholdPercent: 0.70, // When dirt falls below 70% of max (70g), refill wave triggers
+    refillThresholdPercent: 0.50, // When dirt falls below 70% of max (70g), refill wave triggers
     maxCapPercent: 1.00,          // Refill wave grows dirt up to 100% of max (100g)
     spawnIntervalMs: 2000,        // Milliseconds between spawning new dirt zone seeds (2s)
     maxActiveZones: 14,           // Maximum simultaneous active growing zones
@@ -174,6 +185,26 @@ var Values = {
         getStat(upg) {
           return upg.level === 0 ? "Locked" : "100g Max";
         }
+      },
+      autoCleaner: {
+        name: "Auto Cleaner",
+        image: "Assets/Upgrades/Dust/Auto Cleaner.png",
+        currency: "dust",
+        require: { upgrade: "capacity", level: 5 }, // Unlocked after buying 5 capacity upgrades
+        effect: 1.0,
+        cost: 2.0,
+        mult: 50.0,
+        level: 0,
+        maxLevel: 3,
+        getDesc(upg) {
+          return `Auto-cleaner bot that wanders and vacuums dust & dirt (${upg.level}/3)`;
+        },
+        getEffect(upg) {
+          return `${upg.level} / 3 Bots`;
+        },
+        getStat(upg) {
+          return `${upg.level} Active`;
+        }
       }
     },
     dirtShop: {
@@ -213,6 +244,11 @@ var Values = {
     const upg = this.shops.dustShop.efficiency || this.shops.dustShop.CleanRate || this.shops.dustShop.Efficiency;
     const multiplier = upg ? (1.0 + (upg.level * upg.effect)) : 1.0;
     return (this.vacuum.cleanRate != null ? this.vacuum.cleanRate : 0.1) * multiplier;
+  },
+
+  // Effective auto vacuum cleaning rate in g/s distributed across pixels under vacuum
+  getEffectiveAutoVacuumCleanRate() {
+    return (this.autoVacuum && this.autoVacuum.cleanRate != null) ? this.autoVacuum.cleanRate : 0.1;
   },
 
   // Effective vacuum capacity in grams (e.g. 0.5 * (1 + level * 0.5))
@@ -260,12 +296,14 @@ var Values = {
       const alias = key === 'cleanrate' ? 'efficiency' :
                     (key === 'capacitymult' ? 'capacity' :
                     (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
-                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' : key)));
+                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' :
+                    (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' : key))));
       upg = (this.shops.dustShop && this.shops.dustShop[alias]) ||
             (this.shops.dirtShop && this.shops.dirtShop[alias]);
     }
     if (!upg) return 0;
     if (upg.isUnlock && upg.level >= 1) return Infinity;
+    if (upg.maxLevel && upg.level >= upg.maxLevel) return Infinity;
     return upg.cost * Math.pow(upg.mult || 1, upg.level);
   },
 
@@ -281,7 +319,8 @@ var Values = {
       const alias = key === 'cleanrate' ? 'efficiency' :
                     (key === 'capacitymult' ? 'capacity' :
                     (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
-                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' : key)));
+                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' :
+                    (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' : key))));
       if (shop[alias]) return shop[alias];
     }
     return null;
@@ -333,6 +372,12 @@ var Values = {
   // Normalized vacuum radius ratio (1% of room dimension)
   getSizeRatio() {
     return this.vacuum.size >= 0.05 ? (this.vacuum.size * 0.1) : this.vacuum.size;
+  },
+
+  // Normalized auto vacuum radius ratio
+  getAutoVacuumSizeRatio() {
+    const s = (this.autoVacuum && this.autoVacuum.size != null) ? this.autoVacuum.size : 0.1;
+    return s >= 0.05 ? (s * 0.1) : s;
   }
 };
 

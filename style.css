@@ -715,6 +715,14 @@ body.shop-open .bottom-menu-dock {
   color: #fca5a5;
 }
 
+.upgrade-card.is-owned .card-price-val {
+  color: #fde047;
+}
+
+.upgrade-card.is-owned {
+  cursor: default;
+}
+
 /* Card Purchase / Shake Animations */
 @keyframes cardPurchased {
   0% { transform: translateY(-12px) scale(1.04); }

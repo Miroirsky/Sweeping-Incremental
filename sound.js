@@ -242,6 +242,26 @@ class SoundEngine {
       osc.stop(startTime + 0.5);
     });
   }
+
+  playPickContentSound() {
+    if (!this.isInitialized || this.isMuted) return;
+    const now = this.ctx.currentTime;
+    // Pleasant ascending chime/slurp when picking auto cleaner content
+    const freqs = [440.0, 659.25, 880.0]; // A4, E5, A5
+    freqs.forEach((freq, idx) => {
+      const startTime = now + idx * 0.045;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0.12, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.16);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(startTime);
+      osc.stop(startTime + 0.18);
+    });
+  }
 }
 
 window.soundEngine = new SoundEngine();

@@ -63,6 +63,23 @@
   let roomX = 0;
   let roomY = 0;
 
+  // Station on the right of the room (opens when first auto cleaner is bought)
+  const stationGeometry = {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    isOpen: false
+  };
+  Values.stationGeometry = stationGeometry;
+
+  const stationStorage = {
+    dust: 0.0,
+    dirt: 0.0,
+    get stored() { return (this.dust || 0) + (this.dirt || 0); }
+  };
+  Values.station = stationStorage;
+
   // Vacuum Specifications: size ratio from Values (1% of room dimension)
   let cleanerRadius = 8.0;
 
@@ -148,6 +165,7 @@
   let isLeftMouseDown = false;
   let mousePos = { x: width * 0.5, y: height * 0.5 };
   let cleanerPos = { x: width * 0.5, y: height * 0.5 };
+  Values.cleanerPos = cleanerPos;
   let prevCleanerPos = { x: width * 0.5, y: height * 0.5 };
   let hasUserMovedMouse = false;
   let lastFrameTime = performance.now();
@@ -188,6 +206,8 @@
 
     uniform vec2 u_resolution;
     uniform vec4 u_room; // (roomMinX, roomMinY, roomSize, roomSize) in gl_FragCoord px
+    uniform vec4 u_station; // (stationMinX, stationMinY, stationWidth, stationHeight) in gl_FragCoord px
+    uniform float u_station_open; // 1.0 if station space is open on the right, 0.0 if closed
     uniform sampler2D u_mask;
     uniform sampler2D u_dirt_mask;
     uniform vec2 u_cleaner; // gl_FragCoord px
@@ -231,26 +251,64 @@
       float edgeDistX = min(fragCoord.x - u_room.x, (u_room.x + u_room.z) - fragCoord.x);
       float edgeDistY = min(fragCoord.y - u_room.y, (u_room.y + u_room.w) - fragCoord.y);
       float roomEdgeDist = min(edgeDistX, edgeDistY);
-
       bool isInsideRoom = (roomEdgeDist >= 0.0);
+
+      // Station alcove on the right of the room
+      bool isInsideStation = false;
+      float stationEdgeDist = -9999.0;
+      if (u_station_open > 0.5) {
+        float sDistX = min(fragCoord.x - u_station.x, (u_station.x + u_station.z) - fragCoord.x);
+        float sDistY = min(fragCoord.y - u_station.y, (u_station.y + u_station.w) - fragCoord.y);
+        stationEdgeDist = min(sDistX, sDistY);
+        isInsideStation = (fragCoord.x >= u_station.x - 1.5 && fragCoord.x <= u_station.x + u_station.z &&
+                           fragCoord.y >= u_station.y && fragCoord.y <= u_station.y + u_station.w);
+      }
+
+      bool isInsidePlayfield = isInsideRoom || isInsideStation;
+
+      // Distance to combined playfield boundary for exterior walls/trim
+      float playfieldDist = roomEdgeDist;
+      if (u_station_open > 0.5) {
+        playfieldDist = max(roomEdgeDist, stationEdgeDist);
+      }
 
       vec3 surface = vec3(0.0);
 
-      if (!isInsideRoom) {
-        // Outside the room: Dark cozy floor / wall frame surrounding the room
-        float distFromRoom = -roomEdgeDist;
+      if (!isInsidePlayfield) {
+        // Outside the room & station: Dark cozy floor / wall frame
+        float distFromRoom = -playfieldDist;
         
         // Dark floor base
         vec3 outsideFloor = vec3(0.08, 0.05, 0.03);
         
-        // Wooden frame/baseboard trim around the square room
+        // Wooden frame/baseboard trim around the room and station perimeter
         float trim = smoothstep(14.0, 0.0, distFromRoom);
         vec3 trimColor = vec3(0.22, 0.14, 0.09);
-        // Bevel highlight right along the carpet edge
+        // Bevel highlight right along the floor edge
         float bevel = smoothstep(3.0, 0.0, distFromRoom);
         trimColor = mix(trimColor, vec3(0.35, 0.23, 0.15), bevel);
         
         surface = mix(outsideFloor, trimColor, trim);
+      } else if (isInsideStation && !isInsideRoom) {
+        // Inside Station alcove on the right (Tech Docking Pad Floor)
+        vec2 stationUV = (fragCoord - u_station.xy) / u_station.zw;
+        vec2 tile = fract(stationUV * vec2(3.0, 6.0));
+        float tileBorder = step(0.06, tile.x) * step(0.06, tile.y);
+        vec3 stationFloor = mix(vec3(0.11, 0.13, 0.16), vec3(0.18, 0.21, 0.26), tileBorder);
+
+        // Center runway stripe in station
+        float centerDistY = abs(stationUV.y - 0.5);
+        float runway = smoothstep(0.18, 0.04, centerDistY);
+        stationFloor = mix(stationFloor, vec3(0.14, 0.32, 0.38), runway * 0.40);
+
+        // Ambient contact shadow along station perimeter walls
+        float sDistX = min(fragCoord.x - u_station.x, (u_station.x + u_station.z) - fragCoord.x);
+        float sDistY = min(fragCoord.y - u_station.y, (u_station.y + u_station.w) - fragCoord.y);
+        float sDist = min(max(0.0, (u_station.x + u_station.z) - fragCoord.x), sDistY);
+        float stationShadow = smoothstep(0.0, 14.0, sDist);
+        stationFloor *= (0.75 + 0.25 * stationShadow);
+
+        surface = stationFloor;
       } else {
         // Inside the square room:
 
@@ -482,20 +540,66 @@
     return true;
   }
 
+  function isAutoCleanerStationOpen() {
+    const upg = Values.shops && Values.shops.dustShop && (Values.shops.dustShop.autoCleaner || Values.shops.dustShop['Auto Cleaner']);
+    return upg ? (upg.level >= 1) : false;
+  }
+
   // --- Room Geometry Calculation ---
   function updateRoomGeometry() {
     width = window.innerWidth;
     height = window.innerHeight;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    // Max scale centered square room (fits comfortably on screen and adapts)
-    const margin = 20; // 10px on each side
-    roomSize = Math.max(80, Math.min(width - margin, height - margin));
-    roomX = (width - roomSize) * 0.5;
+    const margin = 20; // Margin around playfield
+    const isStationOpen = isAutoCleanerStationOpen();
+    stationGeometry.isOpen = isStationOpen;
+
+    // Allocate right-side space for station if open (~16% of roomSize)
+    const maxRoomW = isStationOpen ? (width - margin) / 1.18 : (width - margin);
+    const maxRoomH = height - margin;
+    roomSize = Math.max(80, Math.min(maxRoomW, maxRoomH));
+
+    const stationW = isStationOpen ? Math.max(50, Math.min(130, roomSize * 0.16)) : 0;
+    const stationH = isStationOpen ? Math.max(70, Math.min(190, roomSize * 0.35)) : 0;
+
+    const totalPlayfieldW = roomSize + stationW;
+    roomX = (width - totalPlayfieldW) * 0.5;
     roomY = (height - roomSize) * 0.5;
+
+    stationGeometry.x = roomX + roomSize;
+    stationGeometry.y = roomY + (roomSize - stationH) * 0.5;
+    stationGeometry.width = stationW;
+    stationGeometry.height = stationH;
 
     // Vacuum radius: 1% of the room size (from Values)
     cleanerRadius = Math.max(3.0, roomSize * Values.getSizeRatio());
+  }
+
+  function clampCleanerToPlayfield(pos, radius) {
+    if (!stationGeometry.isOpen) {
+      pos.x = Math.max(roomX + radius, Math.min(roomX + roomSize - radius, pos.x));
+      pos.y = Math.max(roomY + radius, Math.min(roomY + roomSize - radius, pos.y));
+      return;
+    }
+
+    const s = stationGeometry;
+    const inStationDoorY = (pos.y >= s.y + radius && pos.y <= s.y + s.height - radius);
+
+    if (inStationDoorY) {
+      // In doorway band: can move between room left and station right
+      pos.x = Math.max(roomX + radius, Math.min(s.x + s.width - radius, pos.x));
+    } else {
+      pos.x = Math.max(roomX + radius, Math.min(roomX + roomSize - radius, pos.x));
+    }
+
+    if (pos.x > roomX + roomSize - radius * 0.5) {
+      // Inside station alcove: Y clamped to station height
+      pos.y = Math.max(s.y + radius, Math.min(s.y + s.height - radius, pos.y));
+    } else {
+      // Inside main room: Y clamped to room height
+      pos.y = Math.max(roomY + radius, Math.min(roomY + roomSize - radius, pos.y));
+    }
   }
 
   // --- WebGL Dust & Dirt Textures Setup ---
@@ -570,7 +674,7 @@
         <img class="card-img" src="${upg.image || ''}" alt="${upg.name || key}" draggable="false" />
         <div class="card-top-bar">
           <div class="card-top-header">
-            <span class="card-lvl-badge" id="card-lvl-${key}">LVL ${upg.level}</span>
+            <span class="card-lvl-badge" id="card-lvl-${key}">${upg.isUnlock ? (upg.level >= 1 ? 'UNLOCKED' : 'LOCKED') : (upg.maxLevel ? `LVL ${upg.level}/${upg.maxLevel}` : `LVL ${upg.level}`)}</span>
             <span class="card-effect-desc" id="card-effect-${key}">${upg.getEffect ? upg.getEffect(upg) : ''}</span>
           </div>
           <div class="card-effect-row">
@@ -651,6 +755,7 @@
     const upg = shopData ? shopData[key] : null;
     if (!upg) return;
     if (upg.isUnlock && upg.level >= 1) return; // already unlocked
+    if (upg.maxLevel && upg.level >= upg.maxLevel) return; // already maxed
 
     const cost = Values.getUpgradeCost(key);
     const cardEl = document.getElementById(`card-${key}`);
@@ -669,6 +774,10 @@
       if (key === 'dirt' || key === 'Dirt') {
         generateInstantDirt();
       }
+
+      // Sync active auto-cleaners and open station when autoCleaner upgrade is bought
+      updateRoomGeometry();
+      syncAutoCleaners();
 
       updateDirtShopVisibility();
       initShopUI();
@@ -708,7 +817,7 @@
 
       const cost = Values.getUpgradeCost(key);
       const canAfford = currentFunds >= cost;
-      const isMaxed = upg.isUnlock ? (upg.level >= 1) : false;
+      const isMaxed = upg.isUnlock ? (upg.level >= 1) : (upg.maxLevel ? (upg.level >= upg.maxLevel) : false);
 
       const cardEl = document.getElementById(`card-${key}`);
       if (cardEl) {
@@ -724,7 +833,7 @@
 
       const lvlEl = document.getElementById(`card-lvl-${key}`);
       if (lvlEl) {
-        lvlEl.textContent = upg.isUnlock ? (isMaxed ? 'UNLOCKED' : 'LOCKED') : `LVL ${upg.level}`;
+        lvlEl.textContent = upg.isUnlock ? (isMaxed ? 'UNLOCKED' : 'LOCKED') : (upg.maxLevel ? `LVL ${upg.level}/${upg.maxLevel}` : `LVL ${upg.level}`);
       }
 
       const effectEl = document.getElementById(`card-effect-${key}`);
@@ -739,7 +848,7 @@
 
       const costEl = document.getElementById(`card-cost-${key}`);
       if (costEl) {
-        costEl.textContent = isMaxed ? 'OWNED' : `${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g`;
+        costEl.textContent = isMaxed ? (upg.isUnlock ? 'OWNED' : 'MAX') : `${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g`;
       }
     });
 
@@ -1270,6 +1379,554 @@
     }
   }
 
+  // --- Autonomous Mini Cleaners System ---
+  const autoCleaners = [];
+  Values.autoCleaners = autoCleaners;
+  const floatingTexts = [];
+  const autoCleanerParticles = [];
+
+  function getAutoVacuumRadius() {
+    const sizeRatio = (Values.getAutoVacuumSizeRatio) ? Values.getAutoVacuumSizeRatio() : 0.01;
+    return Math.max(3.0, roomSize * sizeRatio);
+  }
+
+  function getAutoVacuumSpeed() {
+    const speedVal = (Values.autoVacuum && Values.autoVacuum.speed != null) ? Values.autoVacuum.speed : 0.01;
+    const screenDim = Math.min(width, height);
+    return screenDim * speedVal;
+  }
+
+  function getAutoVacuumCapacity() {
+    return (Values.autoVacuum && Values.autoVacuum.capacity != null) ? Values.autoVacuum.capacity : 1.0;
+  }
+
+  function getAutoVacuumCleanRate() {
+    if (Values.getEffectiveAutoVacuumCleanRate) {
+      return Values.getEffectiveAutoVacuumCleanRate();
+    }
+    return (Values.autoVacuum && Values.autoVacuum.cleanRate != null) ? Values.autoVacuum.cleanRate : 0.1;
+  }
+
+  function syncAutoCleaners() {
+    const upg = Values.shops.dustShop && (Values.shops.dustShop.autoCleaner || Values.shops.dustShop['Auto Cleaner']);
+    const targetCount = upg ? upg.level : 0;
+    const radius = getAutoVacuumRadius();
+    const capacity = getAutoVacuumCapacity();
+
+    while (autoCleaners.length < targetCount) {
+      const spawnMargin = radius + 25;
+      const x = roomX + spawnMargin + Math.random() * Math.max(10, roomSize - spawnMargin * 2);
+      const y = roomY + spawnMargin + Math.random() * Math.max(10, roomSize - spawnMargin * 2);
+      const angle = Math.random() * Math.PI * 2;
+      autoCleaners.push({
+        id: Math.random(),
+        x: x,
+        y: y,
+        prevX: x,
+        prevY: y,
+        radius: radius,
+        angle: angle,
+        turnTimer: 1.5 + Math.random() * 2.0,
+        turnSpeed: 0,
+        capacity: capacity,
+        storedDust: 0.0,
+        storedDirt: 0.0,
+        stored: 0.0,
+        pulseAnim: Math.random() * Math.PI * 2,
+        state: 'cleaning', // 'cleaning' | 'returning' | 'docked'
+        dockTimer: 0
+      });
+    }
+
+    while (autoCleaners.length > targetCount) {
+      autoCleaners.pop();
+    }
+  }
+
+  function spawnFloatingText(text, x, y, color = '#4ade80') {
+    floatingTexts.push({
+      text: text,
+      x: x,
+      y: y,
+      vy: -0.65,
+      alpha: 1.0,
+      color: color,
+      size: 12
+    });
+  }
+
+  function spawnStationDepositParticles(x, y) {
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 0.6 + Math.random() * 1.8;
+      splashParticles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd - 0.4,
+        alpha: 0.9,
+        size: 1.5 + Math.random() * 1.5,
+        color: '56, 189, 248' // bright cyan docking spark
+      });
+    }
+  }
+
+  function spawnStationPickupParticles(fromX, fromY, toX, toY, isDirt) {
+    for (let i = 0; i < 3; i++) {
+      const pAngle = Math.random() * Math.PI * 2;
+      const pR = Math.random() * 6;
+      const startX = fromX + Math.cos(pAngle) * pR;
+      const startY = fromY + Math.sin(pAngle) * pR;
+
+      const midX = (startX + toX) * 0.5 + (Math.random() - 0.5) * 16;
+      const midY = (startY + toY) * 0.5 - 20 + (Math.random() - 0.5) * 12;
+
+      autoCleanerParticles.push({
+        p0x: startX,
+        p0y: startY,
+        p1x: midX,
+        p1y: midY,
+        t: 0,
+        speed: 0.04 + Math.random() * 0.025,
+        size: 2.2 + Math.random() * 1.5,
+        alpha: 1.0,
+        color: isDirt ? '184, 98, 74' : '220, 225, 235'
+      });
+    }
+  }
+
+  function updateAutoCleanersSimulation(dt, now) {
+    if (autoCleaners.length === 0) return;
+
+    const currentRadius = getAutoVacuumRadius();
+    const currentSpeed = getAutoVacuumSpeed();
+    const currentCap = getAutoVacuumCapacity();
+    const currentCleanRate = getAutoVacuumCleanRate();
+
+    const s = stationGeometry;
+    const dockX = s.isOpen ? (s.x + s.width * 0.45) : (roomX + roomSize);
+    const dockY = s.isOpen ? (s.y + s.height * 0.5) : (roomY + roomSize * 0.5);
+
+    for (let bIdx = 0; bIdx < autoCleaners.length; bIdx++) {
+      const bot = autoCleaners[bIdx];
+      bot.radius = currentRadius;
+      bot.capacity = currentCap;
+      bot.pulseAnim = (bot.pulseAnim || 0) + dt * 4.0;
+
+      if (!bot.state) bot.state = 'cleaning';
+
+      // Transition to returning when full
+      if (bot.state === 'cleaning' && bot.stored >= bot.capacity - 0.0001 && s.isOpen) {
+        bot.state = 'returning';
+      }
+
+      // State: Docked at station
+      if (bot.state === 'docked') {
+        bot.dockTimer = (bot.dockTimer || 0) - dt;
+        if (bot.dockTimer <= 0) {
+          bot.state = 'cleaning';
+          bot.angle = Math.PI + (Math.random() - 0.5) * 0.6; // head left back into room
+        }
+        continue; // stationary while docked
+      }
+
+      // State: Returning to station
+      if (bot.state === 'returning' && s.isOpen) {
+        let steerTargetX = dockX;
+        let steerTargetY = dockY;
+
+        // If still in main room, steer towards the doorway threshold
+        if (bot.x < roomX + roomSize - bot.radius * 0.5) {
+          steerTargetX = roomX + roomSize + 5;
+          steerTargetY = dockY;
+        }
+
+        const dx = steerTargetX - bot.x;
+        const dy = steerTargetY - bot.y;
+        const dist = Math.hypot(dx, dy);
+
+        // Turn towards target
+        const desiredAngle = Math.atan2(dy, dx);
+        bot.angle = desiredAngle;
+
+        // Move towards target
+        const step = Math.min(dist, currentSpeed * dt * 1.3); // slightly brisker return
+        bot.x += Math.cos(bot.angle) * step;
+        bot.y += Math.sin(bot.angle) * step;
+
+        // Check if arrived at dock
+        if (Math.hypot(dockX - bot.x, dockY - bot.y) < Math.max(6.0, bot.radius * 0.5)) {
+          bot.state = 'docked';
+          bot.dockTimer = 0.65; // brief unload pause
+
+          const depDust = bot.storedDust || 0;
+          const depDirt = bot.storedDirt || 0;
+          const totalDep = depDust + depDirt;
+
+          stationStorage.dust += depDust;
+          stationStorage.dirt += depDirt;
+
+          bot.storedDust = 0;
+          bot.storedDirt = 0;
+          bot.stored = 0;
+
+          spawnStationDepositParticles(bot.x, bot.y);
+          if (window.soundEngine && window.soundEngine.playPickContentSound) {
+            window.soundEngine.playPickContentSound();
+          }
+          if (totalDep > 0.005) {
+            spawnFloatingText(`+${totalDep.toFixed(2)}g deposited`, dockX, s.y - 8, '#38bdf8');
+          }
+        }
+        continue;
+      }
+
+      // State: Cleaning & Autonomous Wandering
+      bot.turnTimer -= dt;
+      if (bot.turnTimer <= 0) {
+        bot.turnSpeed = (Math.random() - 0.5) * 1.8;
+        bot.turnTimer = 1.2 + Math.random() * 2.5;
+      }
+      bot.angle += bot.turnSpeed * dt;
+
+      bot.prevX = bot.x;
+      bot.prevY = bot.y;
+      let nextX = bot.x + Math.cos(bot.angle) * currentSpeed * dt;
+      let nextY = bot.y + Math.sin(bot.angle) * currentSpeed * dt;
+
+      // Wall bouncing with angle reflection within room boundary
+      const minX = roomX + bot.radius;
+      const maxX = roomX + roomSize - bot.radius;
+      const minY = roomY + bot.radius;
+      const maxY = roomY + roomSize - bot.radius;
+
+      if (nextX <= minX) {
+        nextX = minX;
+        bot.angle = Math.PI - bot.angle + (Math.random() - 0.5) * 0.4;
+        bot.turnTimer = 0.8 + Math.random();
+      } else if (nextX >= maxX) {
+        nextX = maxX;
+        bot.angle = Math.PI - bot.angle + (Math.random() - 0.5) * 0.4;
+        bot.turnTimer = 0.8 + Math.random();
+      }
+
+      if (nextY <= minY) {
+        nextY = minY;
+        bot.angle = -bot.angle + (Math.random() - 0.5) * 0.4;
+        bot.turnTimer = 0.8 + Math.random();
+      } else if (nextY >= maxY) {
+        nextY = maxY;
+        bot.angle = -bot.angle + (Math.random() - 0.5) * 0.4;
+        bot.turnTimer = 0.8 + Math.random();
+      }
+
+      bot.x = nextX;
+      bot.y = nextY;
+
+      // 2. Clean the ground under the robot! (like the default vacuum: pick a little dust on every pixel under it with set cleanRate)
+      if (bot.x < roomX + roomSize) {
+        const bgx = ((bot.x - roomX) / roomSize) * GRID_RES;
+        const bgy = ((bot.y - roomY) / roomSize) * GRID_RES;
+        const bgr = Math.max((bot.radius / roomSize) * GRID_RES, 0.75);
+
+        const bMinX = Math.max(0, Math.floor(bgx - bgr));
+        const bMaxX = Math.min(GRID_RES - 1, Math.ceil(bgx + bgr));
+        const bMinY = Math.max(0, Math.floor(bgy - bgr));
+        const bMaxY = Math.min(GRID_RES - 1, Math.ceil(bgy + bgr));
+
+        // 1. Keep pixels under vacuum protected from dust reappearance & collect pixels under vacuum
+        const pixelsUnderBot = [];
+        for (let cy = bMinY; cy <= bMaxY; cy++) {
+          for (let cx = bMinX; cx <= bMaxX; cx++) {
+            if (Math.hypot(cx + 0.5 - bgx, cy + 0.5 - bgy) <= bgr) {
+              const idx = cy * GRID_RES + cx;
+              lastCleanedTime[idx] = now;
+              pixelsUnderBot.push(idx);
+            }
+          }
+        }
+
+        // 2. Perform pixel cleaning (clean rate distributed across pixels under bot)
+        let botDustGained = 0;
+        let botDirtGained = 0;
+        let remainingBotCap = Math.max(0, bot.capacity - (bot.stored || 0));
+
+        if (remainingBotCap > 0.00001 && pixelsUnderBot.length > 0) {
+          const cleanRatePerPixel = currentCleanRate / pixelsUnderBot.length;
+          const maxCleanThisPixel = cleanRatePerPixel * dt;
+
+          for (let i = 0; i < pixelsUnderBot.length; i++) {
+            const idx = pixelsUnderBot[i];
+            let pixelBudget = Math.min(maxCleanThisPixel, remainingBotCap);
+
+            // DIRT IS OVER DUST: remove dirt first to start getting dust!
+            if (dirtGrid[idx] > 0 && pixelBudget > 0) {
+              const take = Math.min(dirtGrid[idx], pixelBudget);
+              dirtGrid[idx] -= take;
+              remainingBotCap -= take;
+              pixelBudget -= take;
+              botDirtGained += take;
+              currentScreenDirtGrams = Math.max(0, currentScreenDirtGrams - take);
+              dirtTextureNeedsUpdate = true;
+            }
+
+            if (dustGrid[idx] > 0 && pixelBudget > 0) {
+              const take = Math.min(dustGrid[idx], pixelBudget);
+              dustGrid[idx] -= take;
+              remainingBotCap -= take;
+              pixelBudget -= take;
+              botDustGained += take;
+              lastCleanedTime[idx] = now;
+              dustTextureNeedsUpdate = true;
+            }
+
+            if (remainingBotCap <= 0.00001) break;
+          }
+        }
+
+        if (botDustGained > 0 || botDirtGained > 0) {
+          if (botDustGained > 0) {
+            currentScreenDustGrams = Math.max(0, currentScreenDustGrams - botDustGained);
+          }
+          bot.storedDust = (bot.storedDust || 0) + botDustGained;
+          bot.storedDirt = (bot.storedDirt || 0) + botDirtGained;
+          bot.stored = bot.storedDust + bot.storedDirt;
+
+          if (bot.stored >= bot.capacity - 0.0001) {
+            bot.stored = bot.capacity;
+            if (s.isOpen) bot.state = 'returning';
+          }
+
+          if (Math.random() < 0.20) {
+            spawnDustParticles(bot.x, bot.y, 1, botDirtGained > 0);
+          }
+        }
+      }
+    }
+
+    // Sync total stored dust & dirt into Values.autoVacuum
+    if (Values.autoVacuum) {
+      let totalAutoDust = 0;
+      let totalAutoDirt = 0;
+      for (let i = 0; i < autoCleaners.length; i++) {
+        totalAutoDust += autoCleaners[i].storedDust || 0;
+        totalAutoDirt += autoCleaners[i].storedDirt || 0;
+      }
+      Values.autoVacuum.storedDust = totalAutoDust;
+      Values.autoVacuum.storedDirt = totalAutoDirt;
+      Values.autoVacuum.stored = totalAutoDust + totalAutoDirt;
+    }
+  }
+
+  function drawAutoCleaner(bot) {
+    const isFull = (bot.stored >= bot.capacity - 0.0001);
+    const r = Math.max(4.0, bot.radius);
+
+    overlayCtx.save();
+
+    // 1. Soft white visibility halo (matching default bot)
+    const haloGrad = overlayCtx.createRadialGradient(bot.x, bot.y, r * 0.7, bot.x, bot.y, r * 1.6);
+    haloGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+    haloGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    overlayCtx.beginPath();
+    overlayCtx.arc(bot.x, bot.y, r * 1.6, 0, Math.PI * 2);
+    overlayCtx.fillStyle = haloGrad;
+    overlayCtx.fill();
+
+    // 2. Ambient contact shadow under circle
+    overlayCtx.beginPath();
+    overlayCtx.arc(bot.x, bot.y + Math.max(1.5, r * 0.15), r + Math.max(2, r * 0.2), 0, Math.PI * 2);
+    overlayCtx.fillStyle = 'rgba(13, 5, 3, 0.35)';
+    overlayCtx.fill();
+
+    // 3. Selection / Full outer ring
+    if (isFull || bot.state === 'returning') {
+      overlayCtx.beginPath();
+      overlayCtx.arc(bot.x, bot.y, r + Math.max(2.5, r * 0.25), 0, Math.PI * 2);
+      const pulse = 0.5 + 0.5 * Math.sin(bot.pulseAnim);
+      overlayCtx.strokeStyle = `rgba(239, 68, 68, ${0.5 + 0.5 * pulse})`;
+      overlayCtx.lineWidth = Math.max(2.0, r * 0.2);
+      overlayCtx.stroke();
+    }
+
+    // 4. White outer chassis & rim (matching default bot)
+    const borderWidth = Math.max(1.8, r * 0.20);
+    const innerR = Math.max(1.5, r - borderWidth);
+
+    overlayCtx.beginPath();
+    overlayCtx.arc(bot.x, bot.y, r, 0, Math.PI * 2);
+    if (isFull || bot.state === 'returning') {
+      const pulse = 0.5 + 0.5 * Math.sin(bot.pulseAnim);
+      overlayCtx.fillStyle = `rgb(255, ${Math.floor(255 - pulse * 140)}, ${Math.floor(255 - pulse * 140)})`;
+    } else {
+      overlayCtx.fillStyle = '#ffffff'; // white body like default bot
+    }
+    overlayCtx.fill();
+
+    // 5. Inner canister with dust & dirt fills (matches default bot off-white background)
+    overlayCtx.save();
+    overlayCtx.beginPath();
+    overlayCtx.arc(bot.x, bot.y, innerR, 0, Math.PI * 2);
+    overlayCtx.clip();
+
+    overlayCtx.fillStyle = '#ebf0f5'; // clean off-white interior like default bot
+    overlayCtx.fill();
+
+    const fillFracDust = Math.min(1.0, (bot.storedDust || 0) / bot.capacity);
+    const fillFracDirt = Math.min(1.0, (bot.storedDirt || 0) / bot.capacity);
+    const bottomY = bot.y + innerR;
+    const canisterH = innerR * 2;
+
+    if (fillFracDust > 0.005) {
+      const dustH = canisterH * fillFracDust;
+      overlayCtx.fillStyle = '#9ca3af';
+      overlayCtx.fillRect(bot.x - innerR, bottomY - dustH, innerR * 2, dustH);
+    }
+
+    if (fillFracDirt > 0.005) {
+      const dustH = canisterH * fillFracDust;
+      const dirtH = canisterH * fillFracDirt;
+      overlayCtx.fillStyle = '#b8624a';
+      overlayCtx.fillRect(bot.x - innerR, bottomY - dustH - dirtH, innerR * 2, dirtH);
+    }
+
+    overlayCtx.restore();
+
+    // 6. Front directional sensor/bumper notch pointing forward
+    const sensorDist = r - borderWidth * 0.5;
+    const sensorX = bot.x + Math.cos(bot.angle) * sensorDist;
+    const sensorY = bot.y + Math.sin(bot.angle) * sensorDist;
+    overlayCtx.beginPath();
+    overlayCtx.arc(sensorX, sensorY, Math.max(1.2, borderWidth * 0.45), 0, Math.PI * 2);
+    overlayCtx.fillStyle = (isFull || bot.state === 'returning') ? '#ef4444' : '#64748b';
+    overlayCtx.fill();
+
+    // 7. Label Tag (Shows status, no click prompts)
+    overlayCtx.font = '700 10px Outfit, sans-serif';
+    overlayCtx.textAlign = 'center';
+    overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+    overlayCtx.shadowBlur = 4;
+
+    const labelY = bot.y - r - 6;
+    if (bot.state === 'returning') {
+      overlayCtx.fillStyle = '#f87171';
+      overlayCtx.fillText('Full -> Docking', bot.x, labelY);
+    } else if (bot.state === 'docked') {
+      overlayCtx.fillStyle = '#38bdf8';
+      overlayCtx.fillText('Unloading...', bot.x, labelY);
+    } else if (bot.stored > 0.01) {
+      overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      overlayCtx.fillText(`${bot.stored.toFixed(2)}g`, bot.x, labelY);
+    }
+
+    overlayCtx.restore();
+  }
+
+  function drawAutoCleaners() {
+    for (let i = 0; i < autoCleaners.length; i++) {
+      drawAutoCleaner(autoCleaners[i]);
+    }
+  }
+
+  // Draw Station (Docking Pad, Storage Tank Silo, Labels) on overlayCanvas
+  function drawStation() {
+    if (!stationGeometry.isOpen) return;
+    const s = stationGeometry;
+
+    overlayCtx.save();
+
+    // 1. Station perimeter subtle border
+    overlayCtx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+    overlayCtx.lineWidth = 1.5;
+    overlayCtx.setLineDash([4, 4]);
+    overlayCtx.strokeRect(s.x, s.y, s.width, s.height);
+    overlayCtx.setLineDash([]);
+
+    // 2. Glowing central docking pad
+    const padX = s.x + s.width * 0.42;
+    const padY = s.y + s.height * 0.5;
+    const padR = Math.max(13, Math.min(26, s.height * 0.28));
+
+    const now = performance.now() * 0.003;
+    const pulse = 0.5 + 0.5 * Math.sin(now);
+
+    overlayCtx.beginPath();
+    overlayCtx.arc(padX, padY, padR, 0, Math.PI * 2);
+    overlayCtx.fillStyle = `rgba(14, 165, 233, ${0.12 + 0.08 * pulse})`;
+    overlayCtx.fill();
+    overlayCtx.strokeStyle = `rgba(56, 189, 248, ${0.5 + 0.35 * pulse})`;
+    overlayCtx.lineWidth = 2.0;
+    overlayCtx.stroke();
+
+    // Docking crosshair circle
+    overlayCtx.beginPath();
+    overlayCtx.arc(padX, padY, padR * 0.5, 0, Math.PI * 2);
+    overlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+    overlayCtx.lineWidth = 1.4;
+    overlayCtx.stroke();
+
+    // Floor runway indicator pointing into dock
+    overlayCtx.font = '700 11px Outfit, sans-serif';
+    overlayCtx.textAlign = 'center';
+    overlayCtx.fillStyle = `rgba(56, 189, 248, ${0.35 + 0.25 * pulse})`;
+    overlayCtx.fillText('▶▶', s.x + 14, padY + 4);
+
+    // 3. Station Storage Tank / Silo (at right edge of station)
+    const tankX = s.x + s.width - 15;
+    const tankY = padY;
+    const tankW = 12;
+    const tankH = Math.min(48, s.height * 0.65);
+
+    // Tank outline & backdrop
+    overlayCtx.fillStyle = '#0f172a';
+    overlayCtx.fillRect(tankX - tankW * 0.5, tankY - tankH * 0.5, tankW, tankH);
+    overlayCtx.strokeStyle = '#38bdf8';
+    overlayCtx.lineWidth = 1.5;
+    overlayCtx.strokeRect(tankX - tankW * 0.5, tankY - tankH * 0.5, tankW, tankH);
+
+    // Tank fill levels (grey for dust, brown for dirt)
+    const storedMass = stationStorage.stored;
+    const maxTankDisplay = 10.0;
+    const fillRatio = Math.min(1.0, storedMass / maxTankDisplay);
+    if (fillRatio > 0.005) {
+      const totalFillH = (tankH - 2) * fillRatio;
+      const dustRatio = storedMass > 0 ? (stationStorage.dust / storedMass) : 1;
+      const dustH = totalFillH * dustRatio;
+      const dirtH = totalFillH - dustH;
+
+      const bottomY = tankY + tankH * 0.5 - 1;
+      if (dustH > 0) {
+        overlayCtx.fillStyle = '#9ca3af';
+        overlayCtx.fillRect(tankX - tankW * 0.5 + 1, bottomY - dustH, tankW - 2, dustH);
+      }
+      if (dirtH > 0) {
+        overlayCtx.fillStyle = '#b8624a';
+        overlayCtx.fillRect(tankX - tankW * 0.5 + 1, bottomY - dustH - dirtH, tankW - 2, dirtH);
+      }
+    }
+
+    // 4. Station Labels & Value Tag
+    overlayCtx.font = '700 10px Outfit, sans-serif';
+    overlayCtx.textAlign = 'center';
+    overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+    overlayCtx.shadowBlur = 4;
+
+    overlayCtx.fillStyle = '#94a3b8';
+    overlayCtx.fillText('STATION', s.x + s.width * 0.5, s.y - 7);
+
+    if (stationStorage.stored > 0.005) {
+      overlayCtx.fillStyle = '#4ade80';
+      overlayCtx.fillText(`${stationStorage.stored.toFixed(2)}g`, padX, padY - padR - 5);
+      overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+      overlayCtx.fillText('Stand to collect', s.x + s.width * 0.5, s.y + s.height + 12);
+    } else {
+      overlayCtx.fillStyle = 'rgba(148, 163, 184, 0.6)';
+      overlayCtx.fillText('Empty', padX, padY - padR - 5);
+    }
+
+    overlayCtx.restore();
+  }
+
   function updateAndDrawParticles() {
     overlayCtx.clearRect(0, 0, width, height);
 
@@ -1397,11 +2054,56 @@
       overlayCtx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
       overlayCtx.fill();
     }
+
+    // Update and draw auto-cleaner transfer particles (from mini bot into player Roomba)
+    for (let i = autoCleanerParticles.length - 1; i >= 0; i--) {
+      const p = autoCleanerParticles[i];
+      p.t += p.speed;
+      if (p.t >= 1.0) {
+        autoCleanerParticles.splice(i, 1);
+        continue;
+      }
+      const u = 1.0 - p.t;
+      const curX = u * u * p.p0x + 2.0 * u * p.t * p.p1x + p.t * p.t * cleanerPos.x;
+      const curY = u * u * p.p0y + 2.0 * u * p.t * p.p1y + p.t * p.t * cleanerPos.y;
+
+      overlayCtx.fillStyle = `rgba(${p.color}, ${p.alpha * (1.0 - p.t * 0.3)})`;
+      overlayCtx.beginPath();
+      overlayCtx.arc(curX, curY, p.size, 0, Math.PI * 2);
+      overlayCtx.fill();
+    }
+
+    // Draw Station (Docking Pad, Silo Tank, Status)
+    drawStation();
+
+    // Draw active autonomous cleaners
+    drawAutoCleaners();
+
+    // Update and draw floating feedback texts
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+      const ft = floatingTexts[i];
+      ft.y += ft.vy;
+      ft.alpha -= 0.018;
+      if (ft.alpha <= 0) {
+        floatingTexts.splice(i, 1);
+        continue;
+      }
+      overlayCtx.save();
+      overlayCtx.font = `700 ${ft.size || 12}px Outfit, sans-serif`;
+      overlayCtx.textAlign = 'center';
+      overlayCtx.globalAlpha = Math.max(0, ft.alpha);
+      overlayCtx.fillStyle = ft.color;
+      overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+      overlayCtx.shadowBlur = 5;
+      overlayCtx.fillText(ft.text, ft.x, ft.y);
+      overlayCtx.restore();
+    }
   }
 
   // --- Resize Handling ---
   function onResize() {
     updateRoomGeometry();
+    syncAutoCleaners();
 
     glCanvas.width = width * dpr;
     glCanvas.height = height * dpr;
@@ -1409,6 +2111,17 @@
 
     overlayCanvas.width = width;
     overlayCanvas.height = height;
+
+    clampCleanerToPlayfield(cleanerPos, cleanerRadius);
+
+    if (autoCleaners) {
+      const curRadius = getAutoVacuumRadius();
+      for (let i = 0; i < autoCleaners.length; i++) {
+        const bot = autoCleaners[i];
+        bot.radius = curRadius;
+        clampCleanerToPlayfield(bot, bot.radius);
+      }
+    }
   }
 
   // --- Reset Game ---
@@ -1418,10 +2131,17 @@
     particles.length = 0;
     transferParticles.length = 0;
     splashParticles.length = 0;
+    autoCleaners.length = 0;
+    floatingTexts.length = 0;
+    autoCleanerParticles.length = 0;
     dirtZones = [];
     currentScreenDirtGrams = 0.0;
     isDirtGenerating = false;
     randomizeDirtNoiseSeed();
+
+    stationStorage.dust = 0.0;
+    stationStorage.dirt = 0.0;
+    updateRoomGeometry();
 
     initTextures();
 
@@ -1430,6 +2150,12 @@
     Values.vacuum.storedDirt = 0.0;
     Values.storage.dust = 0.0;
     Values.storage.dirt = 0.0;
+
+    if (Values.autoVacuum) {
+      Values.autoVacuum.stored = 0.0;
+      Values.autoVacuum.storedDust = 0.0;
+      Values.autoVacuum.storedDirt = 0.0;
+    }
 
     if (Values.shops) {
       Object.keys(Values.shops).forEach((sKey) => {
@@ -1537,115 +2263,166 @@
         cleanerPos.x += (dx / dist) * step;
         cleanerPos.y += (dy / dist) * step;
 
-        // Keep vacuum bounded strictly inside the square room
-        cleanerPos.x = Math.max(roomX + cleanerRadius, Math.min(roomX + roomSize - cleanerRadius, cleanerPos.x));
-        cleanerPos.y = Math.max(roomY + cleanerRadius, Math.min(roomY + roomSize - cleanerRadius, cleanerPos.y));
+        // Keep vacuum bounded strictly inside the room or station alcove
+        clampCleanerToPlayfield(cleanerPos, cleanerRadius);
       }
 
       // Convert cleaner position to grid coords (cleans under the suck zone whether moving or stationary!)
-      const suckRadius = getEffectiveSuckRadius();
-      const gx = ((cleanerPos.x - roomX) / roomSize) * GRID_RES;
-      const gy = ((cleanerPos.y - roomY) / roomSize) * GRID_RES;
-      const gr = (suckRadius / roomSize) * GRID_RES;
-      const effectiveGr = Math.max(gr, 0.75); // Covers at least the pixel under center
+      if (cleanerPos.x < roomX + roomSize) {
+        const suckRadius = getEffectiveSuckRadius();
+        const gx = ((cleanerPos.x - roomX) / roomSize) * GRID_RES;
+        const gy = ((cleanerPos.y - roomY) / roomSize) * GRID_RES;
+        const gr = (suckRadius / roomSize) * GRID_RES;
+        const effectiveGr = Math.max(gr, 0.75); // Covers at least the pixel under center
 
-      const minX = Math.max(0, Math.floor(gx - effectiveGr));
-      const maxX = Math.min(GRID_RES - 1, Math.ceil(gx + effectiveGr));
-      const minY = Math.max(0, Math.floor(gy - effectiveGr));
-      const maxY = Math.min(GRID_RES - 1, Math.ceil(gy + effectiveGr));
+        const minX = Math.max(0, Math.floor(gx - effectiveGr));
+        const maxX = Math.min(GRID_RES - 1, Math.ceil(gx + effectiveGr));
+        const minY = Math.max(0, Math.floor(gy - effectiveGr));
+        const maxY = Math.min(GRID_RES - 1, Math.ceil(gy + effectiveGr));
 
-      // 1. Keep pixels under vacuum protected from dust reappearance & collect pixels under vacuum
-      const pixelsUnderBot = [];
-      for (let cy = minY; cy <= maxY; cy++) {
-        for (let cx = minX; cx <= maxX; cx++) {
-          if (Math.hypot(cx + 0.5 - gx, cy + 0.5 - gy) <= effectiveGr) {
-            const idx = cy * GRID_RES + cx;
-            lastCleanedTime[idx] = now;
-            pixelsUnderBot.push(idx);
+        // 1. Keep pixels under vacuum protected from dust reappearance & collect pixels under vacuum
+        const pixelsUnderBot = [];
+        for (let cy = minY; cy <= maxY; cy++) {
+          for (let cx = minX; cx <= maxX; cx++) {
+            if (Math.hypot(cx + 0.5 - gx, cy + 0.5 - gy) <= effectiveGr) {
+              const idx = cy * GRID_RES + cx;
+              lastCleanedTime[idx] = now;
+              pixelsUnderBot.push(idx);
+            }
           }
         }
-      }
 
-      // 2. Perform pixel cleaning (clean rate distributed across pixels under bot)
-      let dustGained = 0;
-      let dirtCleanedGrams = 0;
-      let remainingCapacity = Math.max(0, maxCapacity - (Values.vacuum.stored || 0));
+        // 2. Perform pixel cleaning (clean rate distributed across pixels under bot)
+        let dustGained = 0;
+        let dirtCleanedGrams = 0;
+        let remainingCapacity = Math.max(0, maxCapacity - (Values.vacuum.stored || 0));
 
-      if (!isVacuumFull && remainingCapacity > 0.00001 && pixelsUnderBot.length > 0) {
-        const cleanRate = Values.getEffectiveCleanRate ? Values.getEffectiveCleanRate() : 0.1;
-        const cleanRatePerPixel = cleanRate / pixelsUnderBot.length;
-        const maxCleanThisPixel = cleanRatePerPixel * dt;
+        if (!isVacuumFull && remainingCapacity > 0.00001 && pixelsUnderBot.length > 0) {
+          const cleanRate = Values.getEffectiveCleanRate ? Values.getEffectiveCleanRate() : 0.1;
+          const cleanRatePerPixel = cleanRate / pixelsUnderBot.length;
+          const maxCleanThisPixel = cleanRatePerPixel * dt;
 
-        for (let i = 0; i < pixelsUnderBot.length; i++) {
-          const idx = pixelsUnderBot[i];
-          let pixelBudget = Math.min(maxCleanThisPixel, remainingCapacity);
+          for (let i = 0; i < pixelsUnderBot.length; i++) {
+            const idx = pixelsUnderBot[i];
+            let pixelBudget = Math.min(maxCleanThisPixel, remainingCapacity);
 
-          // DIRT IS OVER DUST: remove dirt first to start getting dust!
-          if (dirtGrid[idx] > 0 && pixelBudget > 0) {
-            const take = Math.min(dirtGrid[idx], pixelBudget);
-            dirtGrid[idx] -= take;
-            remainingCapacity -= take;
-            pixelBudget -= take;
-            dirtCleanedGrams += take;
-            currentScreenDirtGrams = Math.max(0, currentScreenDirtGrams - take);
-            dirtTextureNeedsUpdate = true;
+            // DIRT IS OVER DUST: remove dirt first to start getting dust!
+            if (dirtGrid[idx] > 0 && pixelBudget > 0) {
+              const take = Math.min(dirtGrid[idx], pixelBudget);
+              dirtGrid[idx] -= take;
+              remainingCapacity -= take;
+              pixelBudget -= take;
+              dirtCleanedGrams += take;
+              currentScreenDirtGrams = Math.max(0, currentScreenDirtGrams - take);
+              dirtTextureNeedsUpdate = true;
+            }
+
+            if (dustGrid[idx] > 0 && pixelBudget > 0) {
+              // Dirt is removed (0), now cleaner cleans dust from this pixel!
+              const take = Math.min(dustGrid[idx], pixelBudget);
+              dustGrid[idx] -= take;
+              remainingCapacity -= take;
+              pixelBudget -= take;
+              dustGained += take;
+              lastCleanedTime[idx] = now;
+              dustTextureNeedsUpdate = true;
+            }
+
+            if (remainingCapacity <= 0.00001) break;
+          }
+        }
+
+        if (dustGained > 0 || dirtCleanedGrams > 0) {
+          if (dustGained > 0) {
+            currentScreenDustGrams = Math.max(0, currentScreenDustGrams - dustGained);
+          }
+          Values.vacuum.storedDust = (Values.vacuum.storedDust || 0) + dustGained;
+          Values.vacuum.storedDirt = (Values.vacuum.storedDirt || 0) + dirtCleanedGrams;
+          Values.vacuum.stored = Values.vacuum.storedDust + Values.vacuum.storedDirt;
+
+          if (Values.vacuum.stored >= maxCapacity - 0.0001) {
+            Values.vacuum.stored = maxCapacity;
+            if (!hadPlayedFullAlert) {
+              hadPlayedFullAlert = true;
+              if (window.soundEngine) window.soundEngine.playFullWarning();
+            }
+          } else {
+            hadPlayedFullAlert = false;
           }
 
-          if (dustGrid[idx] > 0 && pixelBudget > 0) {
-            // Dirt is removed (0), now cleaner cleans dust from this pixel!
-            const take = Math.min(dustGrid[idx], pixelBudget);
-            dustGrid[idx] -= take;
-            remainingCapacity -= take;
-            pixelBudget -= take;
-            dustGained += take;
-            lastCleanedTime[idx] = now;
-            dustTextureNeedsUpdate = true;
-          }
-
-          if (remainingCapacity <= 0.00001) break;
-        }
-      }
-
-      if (dustGained > 0 || dirtCleanedGrams > 0) {
-        if (dustGained > 0) {
-          currentScreenDustGrams = Math.max(0, currentScreenDustGrams - dustGained);
-        }
-        Values.vacuum.storedDust = (Values.vacuum.storedDust || 0) + dustGained;
-        Values.vacuum.storedDirt = (Values.vacuum.storedDirt || 0) + dirtCleanedGrams;
-        Values.vacuum.stored = Values.vacuum.storedDust + Values.vacuum.storedDirt;
-
-        if (Values.vacuum.stored >= maxCapacity - 0.0001) {
-          Values.vacuum.stored = maxCapacity;
-          if (!hadPlayedFullAlert) {
-            hadPlayedFullAlert = true;
-            if (window.soundEngine) window.soundEngine.playFullWarning();
+          if (dirtCleanedGrams > 0) {
+            if (Math.random() < 0.6) spawnDustParticles(cleanerPos.x, cleanerPos.y, 2, true);
+            if (window.soundEngine) {
+              window.soundEngine.updateMovement(0.85);
+              window.soundEngine.playDirtPuff();
+            }
+          } else if (dustGained > 0) {
+            if (Math.random() < 0.45) spawnDustParticles(cleanerPos.x, cleanerPos.y, 1, false);
+            if (window.soundEngine) {
+              window.soundEngine.updateMovement(0.75);
+              window.soundEngine.playDustPuff();
+            }
           }
         } else {
-          hadPlayedFullAlert = false;
-        }
-
-        if (dirtCleanedGrams > 0) {
-          if (Math.random() < 0.6) spawnDustParticles(cleanerPos.x, cleanerPos.y, 2, true);
+          // Sweeping over clean carpet or stationary absorbing: hum
           if (window.soundEngine) {
-            window.soundEngine.updateMovement(0.85);
-            window.soundEngine.playDirtPuff();
+            window.soundEngine.updateMovement(dist > 0.01 ? 0.2 : 0.15);
           }
-        } else if (dustGained > 0) {
-          if (Math.random() < 0.45) spawnDustParticles(cleanerPos.x, cleanerPos.y, 1, false);
-          if (window.soundEngine) {
-            window.soundEngine.updateMovement(0.75);
-            window.soundEngine.playDustPuff();
-          }
-        }
-      } else {
-        // Sweeping over clean carpet or stationary absorbing: hum
-        if (window.soundEngine) {
-          window.soundEngine.updateMovement(dist > 0.01 ? 0.2 : 0.15);
         }
       }
     } else {
       if (window.soundEngine) {
         window.soundEngine.updateMovement(0);
+      }
+    }
+
+    // Station collection: when the player Roomba is in the station alcove, collect stored dust & dirt into player vacuum
+    if (stationGeometry.isOpen && stationStorage.stored > 0.0001) {
+      const isPlayerInStation = (
+        cleanerPos.x >= stationGeometry.x - cleanerRadius * 0.4 &&
+        cleanerPos.x <= stationGeometry.x + stationGeometry.width + 5 &&
+        cleanerPos.y >= stationGeometry.y - 5 &&
+        cleanerPos.y <= stationGeometry.y + stationGeometry.height + 5
+      );
+      if (isPlayerInStation) {
+        const pSpace = Math.max(0, maxCapacity - (Values.vacuum.stored || 0));
+        if (pSpace > 0.0001) {
+          const tRate = Math.max(6.0, maxCapacity * 2.5); // brisk transfer
+          const tAmount = Math.min(stationStorage.stored, pSpace, tRate * dt);
+          const r = tAmount / stationStorage.stored;
+          const tDust = stationStorage.dust * r;
+          const tDirt = stationStorage.dirt * r;
+
+          stationStorage.dust -= tDust;
+          stationStorage.dirt -= tDirt;
+
+          Values.vacuum.storedDust = (Values.vacuum.storedDust || 0) + tDust;
+          Values.vacuum.storedDirt = (Values.vacuum.storedDirt || 0) + tDirt;
+          Values.vacuum.stored = Values.vacuum.storedDust + Values.vacuum.storedDirt;
+
+          updateCapacityAndStorageUI();
+
+          if (Math.random() < 0.6) {
+            spawnStationPickupParticles(
+              stationGeometry.x + stationGeometry.width * 0.75,
+              stationGeometry.y + stationGeometry.height * 0.5,
+              cleanerPos.x,
+              cleanerPos.y,
+              tDirt > tDust
+            );
+          }
+          if (Math.random() < 0.25 && window.soundEngine && window.soundEngine.playPickContentSound) {
+            window.soundEngine.playPickContentSound();
+          }
+
+          if (Values.vacuum.stored >= maxCapacity - 0.0001) {
+            Values.vacuum.stored = maxCapacity;
+            if (!hadPlayedFullAlert) {
+              hadPlayedFullAlert = true;
+              if (window.soundEngine) window.soundEngine.playFullWarning();
+            }
+          }
+        }
       }
     }
 
@@ -1689,6 +2466,9 @@
       }
     }
 
+    // Autonomous Mini Cleaners simulation (wandering & vacuuming)
+    updateAutoCleanersSimulation(dt, now);
+
     // Update textures if modified
     if (dustTextureNeedsUpdate) {
       updateDustTexture();
@@ -1723,6 +2503,23 @@
 
     const uRoom = gl.getUniformLocation(shaderProgram, 'u_room');
     gl.uniform4f(uRoom, roomMinX_dpr, roomMinY_dpr, roomSize_dpr, roomSize_dpr);
+
+    // Uniforms: Station alcove bounds (in WebGL pixels, Y=0 at bottom)
+    const uStation = gl.getUniformLocation(shaderProgram, 'u_station');
+    const uStationOpen = gl.getUniformLocation(shaderProgram, 'u_station_open');
+    if (stationGeometry.isOpen) {
+      gl.uniform4f(
+        uStation,
+        stationGeometry.x * dpr,
+        (height - (stationGeometry.y + stationGeometry.height)) * dpr,
+        stationGeometry.width * dpr,
+        stationGeometry.height * dpr
+      );
+      gl.uniform1f(uStationOpen, 1.0);
+    } else {
+      gl.uniform4f(uStation, 0.0, 0.0, 0.0, 0.0);
+      gl.uniform1f(uStationOpen, 0.0);
+    }
 
     // Cleaner position in screen pixels (gl_FragCoord has Y=0 at bottom)
     const uCleaner = gl.getUniformLocation(shaderProgram, 'u_cleaner');
@@ -1823,9 +2620,12 @@
     }
 
     if (e.touches.length > 0) {
+      const tx = e.touches[0].clientX;
+      const ty = e.touches[0].clientY;
+
       isLeftMouseDown = true;
-      mousePos.x = e.touches[0].clientX;
-      mousePos.y = e.touches[0].clientY;
+      mousePos.x = tx;
+      mousePos.y = ty;
 
       if (!hasUserMovedMouse) {
         hasUserMovedMouse = true;
@@ -1956,6 +2756,7 @@
     initTextures();
     updateDirtShopVisibility();
     initShopUI();
+    syncAutoCleaners();
     onResize();
 
     // Start vacuum in center of room
