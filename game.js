@@ -80,9 +80,15 @@
   };
   Values.stationGeometry = stationGeometry;
 
+  function getStationCapacity() {
+    if (Values.getStationCapacity) return Values.getStationCapacity();
+    return (Values.station && Values.station.capacity != null) ? Values.station.capacity : 50.0;
+  }
+
   const stationStorage = {
     dust: 0.0,
     dirt: 0.0,
+    get capacity() { return getStationCapacity(); },
     get stored() { return (this.dust || 0) + (this.dirt || 0); }
   };
   Values.station = stationStorage;
@@ -165,8 +171,13 @@
   }
 
   let isSpaceHeld = false;
+  let isRightMouseDown = false;
   let isShopOpen = false;
   let hadPlayedFullAlert = false;
+
+  function isStoringActionActive() {
+    return isSpaceHeld || isRightMouseDown;
+  }
 
   // Movement State
   let isLeftMouseDown = false;
@@ -844,11 +855,11 @@
     }
 
     if (storageDustCard) {
-      const isDustTransferActive = isSpaceHeld && (storedDust > 0.0001);
+      const isDustTransferActive = isStoringActionActive() && (storedDust > 0.0001);
       storageDustCard.classList.toggle('receiving', isDustTransferActive);
     }
     if (storageDirtCard) {
-      const isDirtTransferActive = isSpaceHeld && (storedDirt > 0.0001);
+      const isDirtTransferActive = isStoringActionActive() && (storedDirt > 0.0001);
       storageDirtCard.classList.toggle('receiving', isDirtTransferActive);
     }
 
@@ -1466,8 +1477,13 @@
       if (bot.state === 'docked') {
         bot.dockTimer = (bot.dockTimer || 0) - dt;
         if (bot.dockTimer <= 0) {
-          bot.state = 'cleaning';
-          bot.angle = Math.PI + (Math.random() - 0.5) * 0.6; // head left back into room
+          const stationRemaining = getStationCapacity() - stationStorage.stored;
+          if (bot.stored >= bot.capacity - 0.0001 && stationRemaining <= 0.0001) {
+            bot.dockTimer = 0.5; // wait at dock until station has room
+          } else {
+            bot.state = 'cleaning';
+            bot.angle = Math.PI + (Math.random() - 0.5) * 0.6; // head left back into room
+          }
         }
         continue; // stationary while docked
       }
@@ -1501,23 +1517,37 @@
           bot.state = 'docked';
           bot.dockTimer = 0.65; // brief unload pause
 
+          const stationCap = getStationCapacity();
+          const stationRemaining = Math.max(0, stationCap - stationStorage.stored);
+
           const depDust = bot.storedDust || 0;
           const depDirt = bot.storedDirt || 0;
           const totalDep = depDust + depDirt;
 
-          stationStorage.dust += depDust;
-          stationStorage.dirt += depDirt;
+          if (stationRemaining > 0.0001 && totalDep > 0.0001) {
+            const actualTotalDep = Math.min(totalDep, stationRemaining);
+            const ratio = actualTotalDep / totalDep;
+            const actualDust = depDust * ratio;
+            const actualDirt = depDirt * ratio;
 
-          bot.storedDust = 0;
-          bot.storedDirt = 0;
-          bot.stored = 0;
+            stationStorage.dust += actualDust;
+            stationStorage.dirt += actualDirt;
 
-          spawnStationDepositParticles(bot.x, bot.y);
-          if (window.soundEngine && window.soundEngine.playPickContentSound) {
-            window.soundEngine.playPickContentSound();
-          }
-          if (totalDep > 0.005) {
-            spawnFloatingText(`+${totalDep.toFixed(2)}g deposited`, dockX, s.y - 8, '#38bdf8');
+            bot.storedDust = Math.max(0, depDust - actualDust);
+            bot.storedDirt = Math.max(0, depDirt - actualDirt);
+            bot.stored = bot.storedDust + bot.storedDirt;
+
+            spawnStationDepositParticles(bot.x, bot.y);
+            if (window.soundEngine && window.soundEngine.playPickContentSound) {
+              window.soundEngine.playPickContentSound();
+            }
+            if (actualTotalDep > 0.005) {
+              spawnFloatingText(`+${actualTotalDep.toFixed(2)}g deposited`, dockX, s.y - 8, '#38bdf8');
+            }
+          } else if (stationRemaining <= 0.0001 && totalDep > 0.0001) {
+            if (Math.random() < 0.3) {
+              spawnFloatingText('Station Full!', dockX, s.y - 8, '#ef4444');
+            }
           }
         }
         continue;
@@ -1763,8 +1793,14 @@
       overlayCtx.fillStyle = '#f87171';
       overlayCtx.fillText('Full -> Docking', bot.x, labelY);
     } else if (bot.state === 'docked') {
-      overlayCtx.fillStyle = '#38bdf8';
-      overlayCtx.fillText('Unloading...', bot.x, labelY);
+      const stationRemaining = getStationCapacity() - stationStorage.stored;
+      if (stationRemaining <= 0.0001 && bot.stored > 0.01) {
+        overlayCtx.fillStyle = '#f87171';
+        overlayCtx.fillText('Station Full', bot.x, labelY);
+      } else {
+        overlayCtx.fillStyle = '#38bdf8';
+        overlayCtx.fillText('Unloading...', bot.x, labelY);
+      }
     } else if (bot.stored > 0.01) {
       overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       overlayCtx.fillText(`${bot.stored.toFixed(2)}g`, bot.x, labelY);
@@ -1837,8 +1873,8 @@
 
     // Tank fill levels (grey for dust, brown for dirt)
     const storedMass = stationStorage.stored;
-    const maxTankDisplay = 10.0;
-    const fillRatio = Math.min(1.0, storedMass / maxTankDisplay);
+    const stationCap = getStationCapacity();
+    const fillRatio = Math.min(1.0, storedMass / stationCap);
     if (fillRatio > 0.005) {
       const totalFillH = (tankH - 2) * fillRatio;
       const dustRatio = storedMass > 0 ? (stationStorage.dust / storedMass) : 1;
@@ -1865,14 +1901,15 @@
     overlayCtx.fillStyle = '#94a3b8';
     overlayCtx.fillText('STATION', s.x + s.width * 0.5, s.y - 7);
 
-    if (stationStorage.stored > 0.005) {
-      overlayCtx.fillStyle = '#4ade80';
-      overlayCtx.fillText(`${stationStorage.stored.toFixed(2)}g`, padX, padY - padR - 5);
+    const isStationFull = storedMass >= stationCap - 0.001;
+    if (storedMass > 0.005) {
+      overlayCtx.fillStyle = isStationFull ? '#f87171' : '#4ade80';
+      overlayCtx.fillText(`${storedMass.toFixed(1)} / ${stationCap.toFixed(0)}g`, padX, padY - padR - 5);
       overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-      overlayCtx.fillText('Stand to collect', s.x + s.width * 0.5, s.y + s.height + 12);
+      overlayCtx.fillText(isStationFull ? 'Stand to collect (Full!)' : 'Stand to collect', s.x + s.width * 0.5, s.y + s.height + 12);
     } else {
       overlayCtx.fillStyle = 'rgba(148, 163, 184, 0.6)';
-      overlayCtx.fillText('Empty', padX, padY - padR - 5);
+      overlayCtx.fillText(`Empty (${stationCap.toFixed(0)}g)`, padX, padY - padR - 5);
     }
 
     overlayCtx.restore();
@@ -2026,17 +2063,17 @@
       overlayCtx.font = '700 11px Outfit, sans-serif';
       overlayCtx.textAlign = 'center';
       overlayCtx.fillStyle = 'rgba(239, 68, 68, 0.95)';
-      overlayCtx.fillText('FULL (Hold Space)', cleanerPos.x, labelY);
+      overlayCtx.fillText('FULL (Hold Right Click / Space)', cleanerPos.x, labelY);
       overlayCtx.restore();
     }
 
-    // Indicator if storing dust or locked while Space is pressed:
-    if (isSpaceHeld) {
+    // Indicator if storing dust or locked while Space or Right Click is pressed:
+    if (isStoringActionActive()) {
       overlayCtx.save();
       overlayCtx.font = '700 11px Outfit, sans-serif';
       overlayCtx.textAlign = 'center';
       overlayCtx.fillStyle = 'rgba(74, 222, 128, 0.95)';
-      overlayCtx.fillText(Values.vacuum.stored > 0.0001 ? 'STORING (Locked)...' : 'LOCKED (Space held)...', cleanerPos.x, labelY);
+      overlayCtx.fillText(Values.vacuum.stored > 0.0001 ? 'STORING (Locked)...' : 'LOCKED...', cleanerPos.x, labelY);
       overlayCtx.restore();
     }
 
@@ -2229,6 +2266,7 @@
     }
 
     isSpaceHeld = false;
+    isRightMouseDown = false;
     hadPlayedFullAlert = false;
     currentShop = 'dustShop';
 
@@ -2258,8 +2296,8 @@
     const isVacuumFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
 
     // Storing dust and dirt into their separate Infinite Storages:
-    // "you should keep pressing space to store"
-    const isStoringActive = isSpaceHeld && (Values.vacuum.stored > 0.0001);
+    // Hold Space or Right Click to store
+    const isStoringActive = isStoringActionActive() && (Values.vacuum.stored > 0.0001);
     if (isStoringActive) {
       const storeRate = Values.getEffectiveStoreRate ? Values.getEffectiveStoreRate() : (Values.vacuum.storeRate || 0.1);
       const transferTotal = Math.min(Values.vacuum.stored, storeRate * dt);
@@ -2307,9 +2345,9 @@
     // "dirt is capped at 100g on the screen (when under 100, more dirt appear but never exeed 100g)"
     updateDirtZones(dt, now);
 
-    // Vacuum moves and cleans ONLY when left click is held down AND Space is NOT held:
-    // When Space is pressed, player cannot move or clean (prevents clean & insta-store)
-    if (!isSpaceHeld && isLeftMouseDown) {
+    // Vacuum moves and cleans ONLY when left click is held down AND storing is NOT active:
+    // When Space or Right Click is held, player cannot move or clean (prevents clean & insta-store)
+    if (!isStoringActionActive() && isLeftMouseDown) {
       const dx = mousePos.x - cleanerPos.x;
       const dy = mousePos.y - cleanerPos.y;
       const dist = Math.hypot(dx, dy);
@@ -2643,13 +2681,14 @@
 
   // --- Input Event Listeners ---
   function onMouseDown(e) {
-    // Prevent vacuum movement when clicking buttons, upgrade cards, or UI controls
+    // Prevent vacuum movement/storing when clicking buttons, upgrade cards, or UI controls
     if (e.target && e.target.closest('button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"]')) {
       isLeftMouseDown = false;
+      isRightMouseDown = false;
       return;
     }
 
-    if (e.button === 0) { // Left click only
+    if (e.button === 0) { // Left click: move & vacuum
       isLeftMouseDown = true;
       mousePos.x = e.clientX;
       mousePos.y = e.clientY;
@@ -2661,6 +2700,17 @@
       if (window.soundEngine) {
         window.soundEngine.resume();
       }
+    } else if (e.button === 2) { // Right click: store dust & dirt into storage
+      e.preventDefault();
+      if (!isRightMouseDown) {
+        isRightMouseDown = true;
+        if (window.soundEngine) {
+          window.soundEngine.resume();
+          if (Values.vacuum.stored > 0.0001) {
+            window.soundEngine.playStoreBlip();
+          }
+        }
+      }
     }
   }
 
@@ -2670,6 +2720,8 @@
       if (window.soundEngine) {
         window.soundEngine.updateMovement(0);
       }
+    } else if (e.button === 2) {
+      isRightMouseDown = false;
     }
   }
 
@@ -2724,8 +2776,13 @@
   window.addEventListener('mousedown', onMouseDown);
   window.addEventListener('mouseup', onMouseUp);
   window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('contextmenu', (e) => {
+    // Prevent browser context menu so right clicking can store smoothly
+    e.preventDefault();
+  });
   window.addEventListener('blur', () => {
     isLeftMouseDown = false;
+    isRightMouseDown = false;
     isSpaceHeld = false;
     if (window.soundEngine) window.soundEngine.updateMovement(0);
   });

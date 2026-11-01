@@ -18,14 +18,14 @@ var Values = {
 
   // Vacuum Robot Configuration
   vacuum: {
-    cleanRate: 10.0,    // Rate of cleaning distributed across pixels under vacuum (g/s)
-    storeRate: 10.0,    // Transfer rate into infinite storage while holding Space (g/s)
-    capacity: 10.0,     // Base vacuum canister capacity (g)
+    cleanRate: 0.1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
+    storeRate: 0.5,    // Transfer rate into infinite storage while holding Space (g/s)
+    capacity: 0.5,     // Base vacuum canister capacity (g)
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
-    speed: 0.5,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.5,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    speed: 0.01,       // Base movement speed ratio (fraction of screen dimension per second)
+    size: 0.01,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
     topVisualOffset: 0.2, // Visual vertical offset of the top lid (fraction of vacuum radius, e.g. 0.15 = 15% up)
     rotateWithMovement: true, // Whether the vacuum rotates to face movement direction
     bottomImage: "Assets/Icons/B.O.B. Bottom.png", // Bottom/base sprite image
@@ -42,6 +42,14 @@ var Values = {
     speed: 0.01,       // Base movement speed ratio (fraction of screen dimension per second)
     size: 0.1,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
     topVisualOffset: 0.15 // Visual vertical offset of the top lid (fraction of vacuum radius)
+  },
+
+  // Station Configuration (Docking Station on right)
+  station: {
+    capacity: 50.0,     // Station storage tank capacity in grams (50g)
+    stored: 0,          // Current total mass in station tank (dust + dirt)
+    dust: 0,            // Current dust mass in station tank (g)
+    dirt: 0             // Current dirt mass in station tank (g)
   },
 
   // Room Geometry, Resolution & Mass Calibration
@@ -266,6 +274,11 @@ var Values = {
     return (this.autoVacuum && this.autoVacuum.topVisualOffset != null)
       ? this.autoVacuum.topVisualOffset
       : this.getVacuumTopVisualOffset();
+  },
+
+  // Station storage tank capacity in grams (50g)
+  getStationCapacity() {
+    return (this.station && this.station.capacity != null) ? this.station.capacity : 50.0;
   },
 
   // Effective vacuum capacity in grams (e.g. 0.5 * (1 + level * 0.5))
