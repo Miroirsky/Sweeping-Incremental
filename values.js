@@ -18,21 +18,21 @@ var Values = {
 
   // Vacuum Robot Configuration
   vacuum: {
-    cleanRate: 100,    // Rate of cleaning distributed across pixels under vacuum (g/s)
-    storeRate: 100,    // Transfer rate into infinite storage while holding Space (g/s)
-    capacity: 100,     // Base vacuum canister capacity (g)
+    cleanRate: 0.1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
+    storeRate: 0.1,    // Transfer rate into infinite storage while holding Space (g/s)
+    capacity: 0.5,     // Base vacuum canister capacity (g)
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
-    speed: 0.5,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.5          // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
+    speed: 0.01,       // Base movement speed ratio (fraction of screen dimension per second)
+    size: 0.1          // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
   },
 
   // Room Geometry, Resolution & Mass Calibration
   room: {
     gridRes: 1000,        // Grid resolution (100 x 100 pixels = 10,000 pixels)
     dustCapacity: 1000,  // Full room total dust capacity in grams (1 Kg = 1000g)
-    dirtCapacity: 100,   // Full room max dirt on screen in grams (100g)
+    dirtCapacity: 10,   // Full room max dirt on screen in grams (100g)
     dustReappearDelay: 10000, // Time in ms before cleaned dust starts reappearing (10s)
     dustFadeDuration: 1200,   // Smooth reappear fade duration in ms (1.2s)
 
@@ -79,6 +79,8 @@ var Values = {
       capacity: {
         name: "Capacity",
         image: "Assets/Upgrades/Dust/Capacity.png",
+        currency: "dust",
+        require: null, // e.g. { upgrade: "speed", level: 1 } to require another upgrade & level
         effect: 0.5,
         cost: 0.5,
         mult: 1.5,
@@ -96,8 +98,10 @@ var Values = {
       efficiency: {
         name: "Efficiency",
         image: "Assets/Upgrades/Dust/Efficiency.png",
+        currency: "dust",
+        require: { upgrade: "speed", level: 2 }, // e.g. { upgrade: "capacity", level: 1 }
         effect: 0.5,
-        cost: 0.5,
+        cost: 1,
         mult: 1.5,
         level: 0,
         getDesc(upg) {
@@ -113,6 +117,8 @@ var Values = {
       speed: {
         name: "Speed",
         image: "Assets/Upgrades/Dust/Speed.png",
+        currency: "dust",
+        require: null, // e.g. { upgrade: "efficiency", level: 1 }
         effect: 0.5,
         cost: 0.5,
         mult: 1.5,
@@ -130,8 +136,10 @@ var Values = {
       storingSpeed: {
         name: "Storing Speed",
         image: "Assets/Upgrades/Dust/Storing Speed.png",
+        currency: "dust",
+        require: { upgrade: "capacity", level: 2 }, // e.g. { upgrade: "capacity", level: 1 }
         effect: 0.5,
-        cost: 0.5,
+        cost: 0.75,
         mult: 1.5,
         level: 0,
         getDesc(upg) {
@@ -144,30 +152,15 @@ var Values = {
           return `${Values.getEffectiveStoreRate().toFixed(2)}g/s`;
         }
       },
-      suckZone: {
-        name: "Suck Zone",
-        image: "Assets/Upgrades/Dust/Suck Zone.png",
-        effect: 0.2,
-        cost: 1.0,
-        mult: 5.0,
-        level: 0,
-        getDesc(upg) {
-          return `+${(upg.effect * 100).toFixed(0)}% suck zone radius`;
-        },
-        getEffect(upg) {
-          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Suck Zone`;
-        },
-        getStat(upg) {
-          return `${(Values.getEffectiveSuckMultiplier() * 100).toFixed(0)}%`;
-        }
-      },
       dirt: {
         name: "Dirt",
         image: "Assets/Upgrades/Dust/Dirt.png",
+        currency: "dust",
+        require: { upgrade: "efficiency", level: 1 }, // e.g. { upgrade: "speed", level: 2 }
         isUnlock: true,
         maxLevel: 1,
         effect: 1.0,
-        cost: 0.5,
+        cost: 25,
         mult: 1.5,
         level: 0,
         getDesc(upg) {
@@ -180,6 +173,27 @@ var Values = {
         },
         getStat(upg) {
           return upg.level === 0 ? "Locked" : "100g Max";
+        }
+      }
+    },
+    dirtShop: {
+      suckZone: {
+        name: "Suck Zone",
+        image: "Assets/Upgrades/Dirt/Suck Zone.png",
+        currency: "dirt",
+        require: { upgrade: "dirt", level: 1 }, // Requires Dirt level 1 to see this upgrade
+        effect: 0.2,
+        cost: 1.0,
+        mult: 10.0,
+        level: 0,
+        getDesc(upg) {
+          return `+${(upg.effect * 100).toFixed(0)}% suck zone radius`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Suck Zone`;
+        },
+        getStat(upg) {
+          return `${(Values.getEffectiveSuckMultiplier() * 100).toFixed(0)}%`;
         }
       }
     }
@@ -217,7 +231,9 @@ var Values = {
 
   // Effective suck zone radius multiplier (1.0 + level * 0.20)
   getEffectiveSuckMultiplier() {
-    const upg = this.shops.dustShop.suckZone || this.shops.dustShop['suck zone'] || this.shops.dustShop.suck_zone || this.shops.dustShop.SuckZone;
+    const upg = (this.shops.dirtShop && this.shops.dirtShop.suckZone) ||
+                (this.shops.dirtShop && this.shops.dirtShop.SuckZone) ||
+                (this.shops.dustShop && this.shops.dustShop.suckZone);
     const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
     return multiplier;
   },
@@ -238,15 +254,80 @@ var Values = {
   getUpgradeCost(upgradeKey) {
     if (!upgradeKey) return 0;
     const key = upgradeKey.toLowerCase();
-    const upg = this.shops.dustShop[upgradeKey] ||
-                this.shops.dustShop[key] ||
-                this.shops.dustShop[key === 'cleanrate' ? 'efficiency' :
-                                   (key === 'capacitymult' ? 'capacity' :
-                                   (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
-                                   (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' : key)))];
+    let upg = (this.shops.dustShop && (this.shops.dustShop[upgradeKey] || this.shops.dustShop[key])) ||
+              (this.shops.dirtShop && (this.shops.dirtShop[upgradeKey] || this.shops.dirtShop[key]));
+    if (!upg) {
+      const alias = key === 'cleanrate' ? 'efficiency' :
+                    (key === 'capacitymult' ? 'capacity' :
+                    (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
+                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' : key)));
+      upg = (this.shops.dustShop && this.shops.dustShop[alias]) ||
+            (this.shops.dirtShop && this.shops.dirtShop[alias]);
+    }
     if (!upg) return 0;
     if (upg.isUnlock && upg.level >= 1) return Infinity;
     return upg.cost * Math.pow(upg.mult || 1, upg.level);
+  },
+
+  // Look up an upgrade object by key or alias across all shops
+  getUpgrade(upgradeKey) {
+    if (!upgradeKey) return null;
+    const key = upgradeKey.toLowerCase();
+    for (const shopName of Object.keys(this.shops)) {
+      const shop = this.shops[shopName];
+      if (!shop) continue;
+      if (shop[upgradeKey]) return shop[upgradeKey];
+      if (shop[key]) return shop[key];
+      const alias = key === 'cleanrate' ? 'efficiency' :
+                    (key === 'capacitymult' ? 'capacity' :
+                    (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
+                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' : key)));
+      if (shop[alias]) return shop[alias];
+    }
+    return null;
+  },
+
+  // Check if an upgrade requirement is satisfied
+  // Supports:
+  // require: { upgrade: "dirt", level: 1 }
+  // require: { key: "speed", level: 2 }
+  // require: "dirt" (defaults to level 1)
+  // require: { speed: 2, capacity: 1 }
+  checkRequirement(req) {
+    if (!req) return true; // No requirement: always visible
+
+    if (typeof req === 'string') {
+      const target = this.getUpgrade(req);
+      return target ? (target.level >= 1) : false;
+    }
+
+    if (typeof req === 'object') {
+      const targetKey = req.upgrade || req.key || req.name || req.id;
+      if (targetKey) {
+        const requiredLvl = (req.level != null) ? req.level : 1;
+        const target = this.getUpgrade(targetKey);
+        return target ? (target.level >= requiredLvl) : false;
+      }
+
+      // Key-value map: { speed: 2, capacity: 1 }
+      const entries = Object.entries(req);
+      if (entries.length > 0) {
+        for (const [k, lvl] of entries) {
+          if (k === 'level' || k === 'upgrade' || k === 'key') continue;
+          const target = this.getUpgrade(k);
+          if (!target || target.level < lvl) return false;
+        }
+        return true;
+      }
+    }
+
+    return true;
+  },
+
+  // Determines whether an upgrade is visible in the shop
+  isUpgradeVisible(upg) {
+    if (!upg) return false;
+    return this.checkRequirement(upg.require);
   },
 
   // Normalized vacuum radius ratio (1% of room dimension)

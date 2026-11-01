@@ -465,13 +465,24 @@ body.shop-open .bottom-menu-dock {
   transform: translateY(1px);
 }
 
-body.shop-open .menu-square-btn {
+.menu-square-btn.active-shop,
+#dust-shop-btn.active-shop {
   border-color: #ffd080;
   background: #4a2c1a;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 16px rgba(255, 208, 128, 0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 18px rgba(255, 208, 128, 0.45);
 }
 
-/* Shop menu icon: Dust icon */
+#dirt-shop-btn.hidden {
+  display: none !important;
+}
+
+#dirt-shop-btn.active-shop {
+  border-color: #f69466;
+  background: #4a2318;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 18px rgba(246, 148, 102, 0.45);
+}
+
+/* Shop menu icon: Dust/Dirt icons */
 .menu-btn-icon {
   width: 26px;
   height: 26px;
@@ -482,7 +493,7 @@ body.shop-open .menu-square-btn {
 }
 
 .menu-square-btn:hover .menu-btn-icon,
-body.shop-open .menu-square-btn .menu-btn-icon {
+.menu-square-btn.active-shop .menu-btn-icon {
   transform: scale(1.15);
 }
 

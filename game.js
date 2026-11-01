@@ -40,8 +40,10 @@
   const toastText = document.getElementById('toast-text');
 
   // Shop Elements
-  const shopBtn = document.getElementById('shop-btn');
+  const dustShopBtn = document.getElementById('dust-shop-btn') || document.getElementById('shop-btn');
+  const dirtShopBtn = document.getElementById('dirt-shop-btn');
   const shopCardsTray = document.getElementById('shop-cards-tray');
+  let currentShop = 'dustShop';
 
   // --- WebGL Context ---
   let gl = null;
@@ -534,21 +536,32 @@
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, GRID_RES, GRID_RES, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, dirtBytes);
   }
 
-  // Dynamic Cards Shop Rendering & Updates
+  // Dynamic Cards Shop Rendering & Updates (Dust Shop & Dirt Shop)
   function initShopUI() {
     if (!shopCardsTray) return;
     shopCardsTray.innerHTML = '';
 
-    const keys = Object.keys(Values.shops.dustShop);
+    const shopData = (Values.shops && Values.shops[currentShop]) ? Values.shops[currentShop] : Values.shops.dustShop;
+    const isDirtShop = (currentShop === 'dirtShop');
+    const currentFunds = isDirtShop ? (Values.storage.dirt || 0) : (Values.storage.dust || 0);
+
+    const keys = Object.keys(shopData);
     keys.forEach((key) => {
-      const upg = Values.shops.dustShop[key];
+      const upg = shopData[key];
+
+      // Only display the card if requirement is satisfied!
+      if (Values.isUpgradeVisible && !Values.isUpgradeVisible(upg)) {
+        return;
+      }
+
       const cost = Values.getUpgradeCost(key);
-      const canAfford = (Values.storage.dust || 0) >= cost;
+      const canAfford = currentFunds >= cost;
 
       const cardEl = document.createElement('div');
       cardEl.className = `upgrade-card ${canAfford ? 'can-afford' : 'cannot-afford'}`;
       cardEl.id = `card-${key}`;
       cardEl.setAttribute('data-key', key);
+      cardEl.setAttribute('data-shop', currentShop);
       cardEl.setAttribute('role', 'button');
       cardEl.setAttribute('tabindex', '0');
       cardEl.setAttribute('title', `Buy ${upg.name || key}`);
@@ -569,6 +582,16 @@
           <span class="card-price-val" id="card-cost-${key}">${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g</span>
         </div>
       `;
+
+      // Prevent bot from moving when interacting with upgrade cards
+      cardEl.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        isLeftMouseDown = false;
+      });
+      cardEl.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        isLeftMouseDown = false;
+      });
 
       // Interactive 3D tilt & follow mouse on hover
       cardEl.addEventListener('pointerenter', () => {
@@ -604,14 +627,16 @@
 
       cardEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        buyUpgrade(key);
+        isLeftMouseDown = false;
+        buyUpgrade(key, currentShop);
       });
 
       cardEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           e.stopPropagation();
-          buyUpgrade(key);
+          isLeftMouseDown = false;
+          buyUpgrade(key, currentShop);
         }
       });
 
@@ -619,17 +644,25 @@
     });
   }
 
-  function buyUpgrade(key) {
-    const upg = Values.shops.dustShop[key];
+  function buyUpgrade(key, shopKey) {
+    isLeftMouseDown = false;
+    const targetShop = shopKey || currentShop;
+    const shopData = (Values.shops && Values.shops[targetShop]) ? Values.shops[targetShop] : (Values.shops.dustShop[key] ? Values.shops.dustShop : Values.shops.dirtShop);
+    const upg = shopData ? shopData[key] : null;
     if (!upg) return;
     if (upg.isUnlock && upg.level >= 1) return; // already unlocked
 
     const cost = Values.getUpgradeCost(key);
     const cardEl = document.getElementById(`card-${key}`);
+    const isDirtShop = (upg.currency === 'dirt' || targetShop === 'dirtShop');
+    const currentFunds = isDirtShop ? (Values.storage.dirt || 0) : (Values.storage.dust || 0);
 
-    // Dust shop strictly uses DUST only - dirt cannot be used to buy upgrades!
-    if ((Values.storage.dust || 0) >= cost) {
-      Values.storage.dust -= cost;
+    if (currentFunds >= cost) {
+      if (isDirtShop) {
+        Values.storage.dirt -= cost;
+      } else {
+        Values.storage.dust -= cost;
+      }
       upg.level++;
 
       // When Dirt upgrade is bought, unlocked and generates dirt instantly
@@ -637,14 +670,17 @@
         generateInstantDirt();
       }
 
+      updateDirtShopVisibility();
+      initShopUI();
       updateUpgradesAndShopUI();
       updateCapacityAndStorageUI();
       if (window.soundEngine) window.soundEngine.playPurchaseSound();
 
-      if (cardEl) {
-        cardEl.classList.remove('purchased-anim', 'shake-anim');
-        void cardEl.offsetWidth; // trigger reflow
-        cardEl.classList.add('purchased-anim');
+      const updatedCardEl = document.getElementById(`card-${key}`);
+      if (updatedCardEl) {
+        updatedCardEl.classList.remove('purchased-anim', 'shake-anim');
+        void updatedCardEl.offsetWidth; // trigger reflow
+        updatedCardEl.classList.add('purchased-anim');
       }
     } else {
       if (cardEl) {
@@ -657,11 +693,21 @@
 
   // Update Card UI with dynamic level, effect and hover price
   function updateUpgradesAndShopUI() {
-    const keys = Object.keys(Values.shops.dustShop);
+    const shopData = (Values.shops && Values.shops[currentShop]) ? Values.shops[currentShop] : Values.shops.dustShop;
+    const isDirtShop = (currentShop === 'dirtShop');
+    const currentFunds = isDirtShop ? (Values.storage.dirt || 0) : (Values.storage.dust || 0);
+
+    const keys = Object.keys(shopData);
     keys.forEach((key) => {
-      const upg = Values.shops.dustShop[key];
+      const upg = shopData[key];
+
+      // Only display the card if requirement is satisfied!
+      if (Values.isUpgradeVisible && !Values.isUpgradeVisible(upg)) {
+        return;
+      }
+
       const cost = Values.getUpgradeCost(key);
-      const canAfford = (Values.storage.dust || 0) >= cost;
+      const canAfford = currentFunds >= cost;
       const isMaxed = upg.isUnlock ? (upg.level >= 1) : false;
 
       const cardEl = document.getElementById(`card-${key}`);
@@ -696,6 +742,13 @@
         costEl.textContent = isMaxed ? 'OWNED' : `${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g`;
       }
     });
+
+    if (dustShopBtn) {
+      dustShopBtn.classList.toggle('active-shop', isShopOpen && currentShop === 'dustShop');
+    }
+    if (dirtShopBtn) {
+      dirtShopBtn.classList.toggle('active-shop', isShopOpen && currentShop === 'dirtShop');
+    }
   }
 
   // Update Robot Storage (Grey for Dust, Brown for Dirt) and Main Storage UI
@@ -813,16 +866,28 @@
     }, 3200);
   }
 
-  // Shop Toggle & Cards Tray
-  function toggleShop() {
-    isShopOpen = !isShopOpen;
-    document.body.classList.toggle('shop-open', isShopOpen);
-    if (shopCardsTray) {
-      shopCardsTray.classList.toggle('hidden', !isShopOpen);
-      if (isShopOpen) {
-        updateUpgradesAndShopUI();
-      }
+  // Dirt Shop visibility helper (only displayed when Dirt is unlocked)
+  function updateDirtShopVisibility() {
+    if (!dirtShopBtn) return;
+    const isUnlocked = isDirtUnlocked();
+    dirtShopBtn.classList.toggle('hidden', !isUnlocked);
+    dirtShopBtn.style.display = isUnlocked ? 'flex' : 'none';
+  }
+
+  // Shop Management & Cards Tray (Supports Dust Shop and Dirt Shop)
+  function openShop(shopKey) {
+    if (shopKey === 'dirtShop' && !isDirtUnlocked()) {
+      return; // Cannot open Dirt Shop until Dirt is unlocked!
     }
+    if (shopKey) currentShop = shopKey;
+    isShopOpen = true;
+    document.body.classList.add('shop-open');
+    if (shopCardsTray) {
+      shopCardsTray.classList.remove('hidden');
+    }
+    updateDirtShopVisibility();
+    initShopUI();
+    updateUpgradesAndShopUI();
   }
 
   function closeShop() {
@@ -831,6 +896,31 @@
     document.body.classList.remove('shop-open');
     if (shopCardsTray) {
       shopCardsTray.classList.add('hidden');
+    }
+    updateDirtShopVisibility();
+    updateUpgradesAndShopUI();
+  }
+
+  function toggleShop(targetShop) {
+    isLeftMouseDown = false;
+    if (targetShop === 'dirtShop' && !isDirtUnlocked()) {
+      return;
+    }
+    if (targetShop) {
+      if (isShopOpen && currentShop === targetShop) {
+        closeShop();
+      } else {
+        openShop(targetShop);
+      }
+    } else {
+      if (isShopOpen) {
+        closeShop();
+      } else {
+        if (currentShop === 'dirtShop' && !isDirtUnlocked()) {
+          currentShop = 'dustShop';
+        }
+        openShop(currentShop);
+      }
     }
   }
 
@@ -1341,13 +1431,24 @@
     Values.storage.dust = 0.0;
     Values.storage.dirt = 0.0;
 
-    Object.keys(Values.shops.dustShop).forEach((k) => {
-      Values.shops.dustShop[k].level = 0;
-    });
+    if (Values.shops) {
+      Object.keys(Values.shops).forEach((sKey) => {
+        const s = Values.shops[sKey];
+        if (s) {
+          Object.keys(s).forEach((k) => {
+            s[k].level = 0;
+          });
+        }
+      });
+    }
 
     isSpaceHeld = false;
     hadPlayedFullAlert = false;
+    currentShop = 'dustShop';
 
+    updateDirtShopVisibility();
+    initShopUI();
+    updateUpgradesAndShopUI();
     calculateCleanedPercentage();
     updateCapacityAndStorageUI();
 
@@ -1675,6 +1776,12 @@
 
   // --- Input Event Listeners ---
   function onMouseDown(e) {
+    // Prevent vacuum movement when clicking buttons, upgrade cards, or UI controls
+    if (e.target && e.target.closest('button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"]')) {
+      isLeftMouseDown = false;
+      return;
+    }
+
     if (e.button === 0) { // Left click only
       isLeftMouseDown = true;
       mousePos.x = e.clientX;
@@ -1710,6 +1817,11 @@
   }
 
   function onTouchStart(e) {
+    if (e.target && e.target.closest('button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"]')) {
+      isLeftMouseDown = false;
+      return;
+    }
+
     if (e.touches.length > 0) {
       isLeftMouseDown = true;
       mousePos.x = e.touches[0].clientX;
@@ -1784,17 +1896,51 @@
     }
   });
 
-  // Shop Button & Upgrades Listeners (only button toggles/closes the shop)
-  if (shopBtn) {
-    shopBtn.addEventListener('click', (e) => {
+  // Shop Buttons Listeners (Dust Shop & Dirt Shop)
+  if (dustShopBtn) {
+    dustShopBtn.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      toggleShop();
+      isLeftMouseDown = false;
+    });
+    dustShopBtn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      isLeftMouseDown = false;
+    });
+    dustShopBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isLeftMouseDown = false;
+      toggleShop('dustShop');
+    });
+  }
+
+  if (dirtShopBtn) {
+    dirtShopBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      isLeftMouseDown = false;
+    });
+    dirtShopBtn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      isLeftMouseDown = false;
+    });
+    dirtShopBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isLeftMouseDown = false;
+      toggleShop('dirtShop');
     });
   }
 
   // Sound Button
+  soundBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    isLeftMouseDown = false;
+  });
+  soundBtn.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    isLeftMouseDown = false;
+  });
   soundBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    isLeftMouseDown = false;
     if (window.soundEngine) {
       window.soundEngine.resume();
       const unmuted = window.soundEngine.toggleMute();
@@ -1808,6 +1954,7 @@
     updateRoomGeometry();
     if (!initWebGL()) return;
     initTextures();
+    updateDirtShopVisibility();
     initShopUI();
     onResize();
 
