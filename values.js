@@ -35,11 +35,11 @@ var Values = {
   // Automatic Vacuum Robot Configuration
   autoVacuum: {
     cleanRate: 0.1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
-    capacity: 1.0,     // Base vacuum canister capacity (g)
+    capacity: 5.0,     // Base vacuum canister capacity (g)
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
-    speed: 0.01,       // Base movement speed ratio (fraction of screen dimension per second)
+    speed: 0.02,       // Base movement speed ratio (fraction of screen dimension per second)
     size: 0.1,         // Size ratio (0.1 corresponds to 1% of room dimension in getSizeRatio)
     topVisualOffset: 0.15 // Visual vertical offset of the top lid (fraction of vacuum radius)
   },
