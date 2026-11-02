@@ -68,11 +68,15 @@ var Values = {
     },
     // Exact grams of dust per pixel (e.g. 1000g / 10,000px = 0.1g/px)
     get dustPerPixel() {
-      return this.dustCapacity / this.totalPixels;
+      const basePerPx = this.dustCapacity / this.totalPixels;
+      const densMult = (typeof Values !== 'undefined' && Values.getEffectiveDustDensityMultiplier)
+        ? Values.getEffectiveDustDensityMultiplier()
+        : 1.0;
+      return basePerPx * densMult;
     },
     // Exact grams of dirt per pixel for full dirt pixels (e.g. 0.1g/px)
     get dirtPerPixel() {
-      return this.dustPerPixel;
+      return this.dustCapacity / this.totalPixels;
     }
   },
 
@@ -260,11 +264,74 @@ var Values = {
         getStat(upg) {
           return `${Values.getEffectiveAutoVacuumCleanRate().toFixed(2)}g/s`;
         }
+      },
+      autoCapacity: {
+        name: "Auto Capacity",
+        image: "Assets/Upgrades/Dirt/Auto Capacity.png",
+        currency: "dirt",
+        require: { upgrade: "dirt", level: 1 },
+        effect: 0.5,
+        cost: 5.0,
+        mult: 1.75,
+        level: 0,
+        getDesc(upg) {
+          return `+${(upg.effect * 100).toFixed(0)}% auto cleaner capacity`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Capacity`;
+        },
+        getStat(upg) {
+          return `${Values.getEffectiveAutoVacuumCapacity().toFixed(2)}g`;
+        }
+      },
+      moreDust: {
+        name: "More Dust",
+        image: "Assets/Upgrades/Dirt/More Dust.png",
+        currency: "dirt",
+        require: { upgrade: "dirt", level: 1 },
+        cost: 5.0,
+        mult: 2.0,
+        dustMultEffect: 0.5,
+        dustDensityEffect: 0.3,
+        level: 0,
+        getDesc(upg) {
+          return `+50% dust multiplier & +30% dust density`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * 50)}% Sell / +${(upg.level * 30)}% Dens`;
+        },
+        getStat(upg) {
+          return `x${Values.getEffectiveDustMultiplier().toFixed(1)} Mult / x${Values.getEffectiveDustDensityMultiplier().toFixed(1)} Dens`;
+        }
       }
     }
   },
 
   // --- Dynamic Multiplier & Calculation Helpers ---
+
+  // Effective dust multiplier applied when storing/selling dust (1.0 + level * 0.50)
+  getEffectiveDustMultiplier() {
+    const upg = (this.shops.dirtShop && (this.shops.dirtShop.moreDust || this.shops.dirtShop.MoreDust)) ||
+                (this.shops.dustShop && (this.shops.dustShop.moreDust || this.shops.dustShop.MoreDust));
+    const effect = (upg && upg.dustMultEffect != null) ? upg.dustMultEffect : 0.5;
+    const multiplier = 1.0 + (upg ? (upg.level * effect) : 0);
+    return multiplier;
+  },
+
+  // Effective dust density multiplier for grams per pixel (1.0 + level * 0.30)
+  getEffectiveDustDensityMultiplier() {
+    const upg = (this.shops.dirtShop && (this.shops.dirtShop.moreDust || this.shops.dirtShop.MoreDust)) ||
+                (this.shops.dustShop && (this.shops.dustShop.moreDust || this.shops.dustShop.MoreDust));
+    const effect = (upg && upg.dustDensityEffect != null) ? upg.dustDensityEffect : 0.3;
+    const multiplier = 1.0 + (upg ? (upg.level * effect) : 0);
+    return multiplier;
+  },
+
+  // Effective total room dust capacity in grams (1000g * density multiplier)
+  getEffectiveDustCapacity() {
+    const baseCap = (this.room && this.room.dustCapacity != null) ? this.room.dustCapacity : 1000;
+    return baseCap * this.getEffectiveDustDensityMultiplier();
+  },
 
   // Effective vacuum movement speed ratio (e.g. 0.01 * (1 + level * 0.5))
   getEffectiveSpeed() {
@@ -287,6 +354,15 @@ var Values = {
     const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
     const baseRate = (this.autoVacuum && this.autoVacuum.cleanRate != null) ? this.autoVacuum.cleanRate : 0.1;
     return baseRate * multiplier;
+  },
+
+  // Effective auto vacuum canister capacity in grams (1.0 * (1 + level * 0.5))
+  getEffectiveAutoVacuumCapacity() {
+    const upg = (this.shops.dirtShop && (this.shops.dirtShop.autoCapacity || this.shops.dirtShop.AutoCapacity)) ||
+                (this.shops.dustShop && (this.shops.dustShop.autoCapacity || this.shops.dustShop.AutoCapacity));
+    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const baseCap = (this.autoVacuum && this.autoVacuum.capacity != null) ? this.autoVacuum.capacity : 1.0;
+    return baseCap * multiplier;
   },
 
   // Visual vertical offset for top lid of default vacuum (fraction of vacuum radius)
@@ -352,7 +428,9 @@ var Values = {
                     (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
                     (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' || key === 'size' ? 'size' :
                     (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
-                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))));
+                    (key === 'autocapacity' || key === 'auto capacity' || key === 'auto_capacity' ? 'autoCapacity' :
+                    (key === 'moredust' || key === 'more dust' || key === 'more_dust' ? 'moreDust' :
+                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))))));
       upg = (this.shops.dustShop && this.shops.dustShop[alias]) ||
             (this.shops.dirtShop && this.shops.dirtShop[alias]);
     }
@@ -376,7 +454,9 @@ var Values = {
                     (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
                     (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' || key === 'size' ? 'size' :
                     (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
-                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))));
+                    (key === 'autocapacity' || key === 'auto capacity' || key === 'auto_capacity' ? 'autoCapacity' :
+                    (key === 'moredust' || key === 'more dust' || key === 'more_dust' ? 'moreDust' :
+                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))))));
       if (shop[alias]) return shop[alias];
     }
     return null;

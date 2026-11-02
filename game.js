@@ -145,6 +145,10 @@
   }
 
   let currentScreenDirtGrams = 0.0;
+  function getRoomDustCapacity() {
+    return Values.getEffectiveDustCapacity ? Values.getEffectiveDustCapacity() : (Values.room ? Values.room.dustCapacity : 1000);
+  }
+
   let currentScreenDustGrams = Values.room.dustCapacity;
   let dirtZones = []; // active organic dirt zones that sprout & grow
   let lastDirtZoneSpawn = performance.now();
@@ -548,7 +552,7 @@
   // --- WebGL Dust & Dirt Textures Setup ---
   function initTextures() {
     syncGridDimensions();
-    currentScreenDustGrams = Values.room.dustCapacity;
+    currentScreenDustGrams = getRoomDustCapacity();
     const dustPerPx = Values.room.dustPerPixel;
     for (let i = 0; i < TOTAL_PIXELS; i++) {
       dustGrid[i] = dustPerPx;
@@ -718,6 +722,21 @@
         generateInstantDirt();
       }
 
+      // When More Dust upgrade is bought, scale existing dust on the floor to the new density!
+      if (key === 'moreDust' || key === 'MoreDust' || key === 'moredust') {
+        const prevLvl = upg.level - 1;
+        const oldMult = 1.0 + prevLvl * 0.3;
+        const newMult = 1.0 + upg.level * 0.3;
+        const factor = newMult / oldMult;
+        for (let i = 0; i < TOTAL_PIXELS; i++) {
+          if (dustGrid[i] > 0) {
+            dustGrid[i] *= factor;
+          }
+        }
+        currentScreenDustGrams *= factor;
+        dustTextureNeedsUpdate = true;
+      }
+
       // Sync active auto-cleaners and open station when autoCleaner upgrade is bought
       updateRoomGeometry();
       clampCleanerToPlayfield(cleanerPos, cleanerRadius);
@@ -857,7 +876,7 @@
 
     // Dirt on Screen Indicator (Top Right)
     const maxDirt = getMaxScreenDirt();
-    const requiredDust = Math.min(Values.room.dustCapacity, maxDirt);
+    const requiredDust = Math.min(getRoomDustCapacity(), maxDirt);
     const isWaitingForDust = isDirtUnlocked() && (currentScreenDirtGrams < getDirtRefillThreshold()) && (currentScreenDustGrams < requiredDust - 0.5);
 
     if (dirtIndicator) {
@@ -885,7 +904,7 @@
     }
     currentScreenDustGrams = remainingDustGrams;
 
-    const totalCapacity = Values.room.dustCapacity;
+    const totalCapacity = getRoomDustCapacity();
     const gramsCleared = Math.max(0, totalCapacity - remainingDustGrams);
     const pct = Math.min(100, (gramsCleared / totalCapacity) * 100);
     cleanedPercent = pct;
@@ -1039,7 +1058,7 @@
 
     // Check if there is enough dust on the screen:
     // If not enough dust, wait until there is enough!
-    const requiredDust = Math.min(Values.room.dustCapacity, maxDirt);
+    const requiredDust = Math.min(getRoomDustCapacity(), maxDirt);
     if (currentScreenDustGrams < requiredDust - 0.5) {
       return; // Not enough dust on the screen yet, wait until dust reappears!
     }
@@ -1340,6 +1359,9 @@
   }
 
   function getAutoVacuumCapacity() {
+    if (Values.getEffectiveAutoVacuumCapacity) {
+      return Values.getEffectiveAutoVacuumCapacity();
+    }
     return (Values.autoVacuum && Values.autoVacuum.capacity != null) ? Values.autoVacuum.capacity : 1.0;
   }
 
@@ -2857,8 +2879,9 @@
       Values.vacuum.storedDirt = Math.max(0, (Values.vacuum.storedDirt || 0) - transferDirt);
       Values.vacuum.stored = Values.vacuum.storedDust + Values.vacuum.storedDirt;
 
-      // Stored separately:
-      Values.storage.dust = (Values.storage.dust || 0) + transferDust;
+      // Stored separately (with More Dust multiplier applied):
+      const dustMult = Values.getEffectiveDustMultiplier ? Values.getEffectiveDustMultiplier() : 1.0;
+      Values.storage.dust = (Values.storage.dust || 0) + transferDust * dustMult;
       Values.storage.dirt = (Values.storage.dirt || 0) + transferDirt;
 
       if (Values.vacuum.stored < 0.0001) {
@@ -3093,7 +3116,7 @@
       }
     }
     if (dustReappeared) {
-      currentScreenDustGrams = Math.min(Values.room.dustCapacity, currentScreenDustGrams + dustGainedFromReappearance);
+      currentScreenDustGrams = Math.min(getRoomDustCapacity(), currentScreenDustGrams + dustGainedFromReappearance);
       dustTextureNeedsUpdate = true;
     }
 
