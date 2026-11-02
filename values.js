@@ -222,7 +222,7 @@ var Values = {
           return `${upg.level} / 3 Bots`;
         },
         getStat(upg) {
-          return `${upg.level} Active`;
+          return `${Values.getTotalAutoCleanersCount ? Values.getTotalAutoCleanersCount() : upg.level} Active`;
         }
       }
     },
@@ -303,11 +303,58 @@ var Values = {
         getStat(upg) {
           return `x${Values.getEffectiveDustMultiplier().toFixed(1)} Mult / x${Values.getEffectiveDustDensityMultiplier().toFixed(1)} Dens`;
         }
+      },
+      autoSpeed: {
+        name: "Auto Speed",
+        image: "Assets/Upgrades/Dirt/Auto Speed.png",
+        currency: "dirt",
+        require: { upgrade: "dirt", level: 1 },
+        effect: 0.5,
+        cost: 1.0,
+        mult: 1.5,
+        level: 0,
+        getDesc(upg) {
+          return `+${(upg.effect * 100).toFixed(0)}% auto cleaner speed`;
+        },
+        getEffect(upg) {
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Speed`;
+        },
+        getStat(upg) {
+          return `${(Values.getEffectiveAutoVacuumSpeed() * 100).toFixed(1)}%/s`;
+        }
+      },
+      autoCleaner: {
+        name: "Auto Cleaner",
+        image: "Assets/Upgrades/Dirt/Auto Cleaner.png",
+        currency: "dirt",
+        require: { upgrade: "moreDust", level: 1 },
+        effect: 1.0,
+        cost: 5.0,
+        mult: 25.0,
+        level: 0,
+        maxLevel: 3,
+        getDesc(upg) {
+          return `Auto-cleaner bot that wanders and vacuums dust & dirt (${upg.level}/3)`;
+        },
+        getEffect(upg) {
+          return `${upg.level} / 3 Bots`;
+        },
+        getStat(upg) {
+          return `${Values.getTotalAutoCleanersCount ? Values.getTotalAutoCleanersCount() : upg.level} Active`;
+        }
       }
     }
   },
 
   // --- Dynamic Multiplier & Calculation Helpers ---
+
+  // Total active auto cleaners across both Dust Shop and Dirt Shop (up to 3 + 3 = 6 bots!)
+  getTotalAutoCleanersCount() {
+    const dustUpg = this.shops.dustShop && (this.shops.dustShop.autoCleaner || this.shops.dustShop['Auto Cleaner']);
+    const dirtUpg = this.shops.dirtShop && (this.shops.dirtShop.autoCleaner || this.shops.dirtShop['Auto Cleaner']);
+    const count = (dustUpg ? dustUpg.level : 0) + (dirtUpg ? dirtUpg.level : 0);
+    return count;
+  },
 
   // Effective dust multiplier applied when storing/selling dust (1.0 + level * 0.50)
   getEffectiveDustMultiplier() {
@@ -365,6 +412,15 @@ var Values = {
     return baseCap * multiplier;
   },
 
+  // Effective auto vacuum movement speed ratio (0.01 * (1 + level * 0.5))
+  getEffectiveAutoVacuumSpeed() {
+    const upg = (this.shops.dirtShop && (this.shops.dirtShop.autoSpeed || this.shops.dirtShop.AutoSpeed)) ||
+                (this.shops.dustShop && (this.shops.dustShop.autoSpeed || this.shops.dustShop.AutoSpeed));
+    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const baseSpeed = (this.autoVacuum && this.autoVacuum.speed != null) ? this.autoVacuum.speed : 0.01;
+    return baseSpeed * multiplier;
+  },
+
   // Visual vertical offset for top lid of default vacuum (fraction of vacuum radius)
   getVacuumTopVisualOffset() {
     return (this.vacuum && this.vacuum.topVisualOffset != null) ? this.vacuum.topVisualOffset : 0.15;
@@ -417,11 +473,13 @@ var Values = {
   },
 
   // Current purchase cost for an upgrade (base cost * mult^level)
-  getUpgradeCost(upgradeKey) {
+  getUpgradeCost(upgradeKey, shopKey) {
     if (!upgradeKey) return 0;
     const key = upgradeKey.toLowerCase();
-    let upg = (this.shops.dustShop && (this.shops.dustShop[upgradeKey] || this.shops.dustShop[key])) ||
-              (this.shops.dirtShop && (this.shops.dirtShop[upgradeKey] || this.shops.dirtShop[key]));
+    let upg = null;
+    if (shopKey && this.shops[shopKey]) {
+      upg = this.shops[shopKey][upgradeKey] || this.shops[shopKey][key];
+    }
     if (!upg) {
       const alias = key === 'cleanrate' ? 'efficiency' :
                     (key === 'capacitymult' ? 'capacity' :
@@ -429,10 +487,16 @@ var Values = {
                     (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' || key === 'size' ? 'size' :
                     (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
                     (key === 'autocapacity' || key === 'auto capacity' || key === 'auto_capacity' ? 'autoCapacity' :
+                    (key === 'autospeed' || key === 'auto speed' || key === 'auto_speed' ? 'autoSpeed' :
                     (key === 'moredust' || key === 'more dust' || key === 'more_dust' ? 'moreDust' :
-                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))))));
-      upg = (this.shops.dustShop && this.shops.dustShop[alias]) ||
-            (this.shops.dirtShop && this.shops.dirtShop[alias]);
+                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key))))))));
+      if (shopKey && this.shops[shopKey]) {
+        upg = this.shops[shopKey][alias];
+      }
+      if (!upg) {
+        upg = (this.shops.dustShop && (this.shops.dustShop[upgradeKey] || this.shops.dustShop[key] || this.shops.dustShop[alias])) ||
+              (this.shops.dirtShop && (this.shops.dirtShop[upgradeKey] || this.shops.dirtShop[key] || this.shops.dirtShop[alias]));
+      }
     }
     if (!upg) return 0;
     if (upg.isUnlock && upg.level >= 1) return Infinity;
@@ -441,22 +505,30 @@ var Values = {
   },
 
   // Look up an upgrade object by key or alias across all shops
-  getUpgrade(upgradeKey) {
+  getUpgrade(upgradeKey, shopKey) {
     if (!upgradeKey) return null;
     const key = upgradeKey.toLowerCase();
+    if (shopKey && this.shops[shopKey]) {
+      if (this.shops[shopKey][upgradeKey]) return this.shops[shopKey][upgradeKey];
+      if (this.shops[shopKey][key]) return this.shops[shopKey][key];
+    }
+    const alias = key === 'cleanrate' ? 'efficiency' :
+                  (key === 'capacitymult' ? 'capacity' :
+                  (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
+                  (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' || key === 'size' ? 'size' :
+                  (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
+                  (key === 'autocapacity' || key === 'auto capacity' || key === 'auto_capacity' ? 'autoCapacity' :
+                  (key === 'autospeed' || key === 'auto speed' || key === 'auto_speed' ? 'autoSpeed' :
+                  (key === 'moredust' || key === 'more dust' || key === 'more_dust' ? 'moreDust' :
+                  (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key))))))));
+    if (shopKey && this.shops[shopKey] && this.shops[shopKey][alias]) {
+      return this.shops[shopKey][alias];
+    }
     for (const shopName of Object.keys(this.shops)) {
       const shop = this.shops[shopName];
       if (!shop) continue;
       if (shop[upgradeKey]) return shop[upgradeKey];
       if (shop[key]) return shop[key];
-      const alias = key === 'cleanrate' ? 'efficiency' :
-                    (key === 'capacitymult' ? 'capacity' :
-                    (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
-                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' || key === 'size' ? 'size' :
-                    (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
-                    (key === 'autocapacity' || key === 'auto capacity' || key === 'auto_capacity' ? 'autoCapacity' :
-                    (key === 'moredust' || key === 'more dust' || key === 'more_dust' ? 'moreDust' :
-                    (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))))));
       if (shop[alias]) return shop[alias];
     }
     return null;

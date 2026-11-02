@@ -45,8 +45,10 @@ A minimalist, satisfying browser cleaning game built with WebGL and procedural s
 - **Dirt Shop (Dirt Currency Only)**:
   - **Size Upgrade**: Increases vacuum bot radius by **+20%**. Cost: `1.0g * 10^lvl` dirt.
   - **Auto Efficiency Upgrade**: Gives **+50%** cleaning efficiency to automatic cleaner bots. Cost: `1.0g * 1.5^lvl` dirt.
+  - **Auto Speed Upgrade**: Increases auto cleaner movement speed by **+50%**. Cost: `1.0g * 1.5^lvl` dirt.
   - **Auto Capacity Upgrade**: Increases auto cleaner canister capacity by **+50%**. Cost: `5.0g * 1.75^lvl` dirt.
   - **More Dust Upgrade**: Adds **+50%** dust multiplier when storing/selling and **+30%** dust density per pixel. Cost: `5.0g * 2^lvl` dirt.
+  - **Auto Cleaner Upgrade**: Adds up to 3 additional auto cleaner bots (up to 6 bots total across both shops). Unlocked by purchasing 1 More Dust upgrade. Cost: `5.0g * 25^lvl` dirt.
 - **Growing Dirt Zones Wave System**:
   - Dirt does **not generate constantly**. When total dirt drops below **70% of max dirt (70g)**, it activates a generation wave that grows dirt **up to 100% (100g)**.
   - While between 70g and 100g (when not in a wave), dirt generation remains paused until you clean it below 70g again.

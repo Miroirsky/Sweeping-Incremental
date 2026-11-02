@@ -488,8 +488,12 @@
   }
 
   function isAutoCleanerStationOpen() {
-    const upg = Values.shops && Values.shops.dustShop && (Values.shops.dustShop.autoCleaner || Values.shops.dustShop['Auto Cleaner']);
-    return upg ? (upg.level >= 1) : false;
+    if (Values.getTotalAutoCleanersCount) {
+      return Values.getTotalAutoCleanersCount() >= 1;
+    }
+    const upg1 = Values.shops && Values.shops.dustShop && (Values.shops.dustShop.autoCleaner || Values.shops.dustShop['Auto Cleaner']);
+    const upg2 = Values.shops && Values.shops.dirtShop && (Values.shops.dirtShop.autoCleaner || Values.shops.dirtShop['Auto Cleaner']);
+    return (upg1 && upg1.level >= 1) || (upg2 && upg2.level >= 1);
   }
 
   // --- Room Geometry Calculation ---
@@ -605,7 +609,7 @@
         return;
       }
 
-      const cost = Values.getUpgradeCost(key);
+      const cost = Values.getUpgradeCost(key, currentShop);
       const canAfford = currentFunds >= cost;
 
       const cardEl = document.createElement('div');
@@ -704,7 +708,7 @@
     if (upg.isUnlock && upg.level >= 1) return; // already unlocked
     if (upg.maxLevel && upg.level >= upg.maxLevel) return; // already maxed
 
-    const cost = Values.getUpgradeCost(key);
+    const cost = Values.getUpgradeCost(key, targetShop);
     const cardEl = document.getElementById(`card-${key}`);
     const isDirtShop = (upg.currency === 'dirt' || targetShop === 'dirtShop');
     const currentFunds = isDirtShop ? (Values.storage.dirt || 0) : (Values.storage.dust || 0);
@@ -779,7 +783,7 @@
         return;
       }
 
-      const cost = Values.getUpgradeCost(key);
+      const cost = Values.getUpgradeCost(key, currentShop);
       const canAfford = currentFunds >= cost;
       const isMaxed = upg.isUnlock ? (upg.level >= 1) : (upg.maxLevel ? (upg.level >= upg.maxLevel) : false);
 
@@ -1353,7 +1357,9 @@
   }
 
   function getAutoVacuumSpeed() {
-    const speedVal = (Values.autoVacuum && Values.autoVacuum.speed != null) ? Values.autoVacuum.speed : 0.01;
+    const speedVal = (Values.getEffectiveAutoVacuumSpeed)
+      ? Values.getEffectiveAutoVacuumSpeed()
+      : ((Values.autoVacuum && Values.autoVacuum.speed != null) ? Values.autoVacuum.speed : 0.01);
     const screenDim = Math.min(width, height);
     return screenDim * speedVal;
   }
@@ -1373,8 +1379,10 @@
   }
 
   function syncAutoCleaners() {
-    const upg = Values.shops.dustShop && (Values.shops.dustShop.autoCleaner || Values.shops.dustShop['Auto Cleaner']);
-    const targetCount = upg ? upg.level : 0;
+    const targetCount = Values.getTotalAutoCleanersCount
+      ? Values.getTotalAutoCleanersCount()
+      : ((Values.shops.dustShop && Values.shops.dustShop.autoCleaner ? Values.shops.dustShop.autoCleaner.level : 0) +
+         (Values.shops.dirtShop && Values.shops.dirtShop.autoCleaner ? Values.shops.dirtShop.autoCleaner.level : 0));
     const radius = getAutoVacuumRadius();
     const capacity = getAutoVacuumCapacity();
 
