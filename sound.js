@@ -262,6 +262,90 @@ class SoundEngine {
       osc.stop(startTime + 0.18);
     });
   }
+
+  playBlackHoleEntrance() {
+    if (!this.isInitialized || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      // 1. Deep graviton sub-bass plunge (space-time folding)
+      const sub = this.ctx.createOscillator();
+      const subGain = this.ctx.createGain();
+      sub.type = 'sine';
+      sub.frequency.setValueAtTime(140, now);
+      sub.frequency.exponentialRampToValueAtTime(32, now + 0.42);
+      subGain.gain.setValueAtTime(0.16, now);
+      subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.44);
+      sub.connect(subGain);
+      subGain.connect(this.masterGain);
+      sub.start(now);
+      sub.stop(now + 0.46);
+
+      // 2. Cosmic vortex suction filter whoosh
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.exponentialRampToValueAtTime(50, now + 0.40);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(750, now);
+      filter.frequency.exponentialRampToValueAtTime(100, now + 0.40);
+      filter.Q.setValueAtTime(4.5, now);
+      oscGain.gain.setValueAtTime(0.09, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+      osc.connect(filter);
+      filter.connect(oscGain);
+      oscGain.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.45);
+    } catch (e) {
+      // Audio fallback
+    }
+  }
+
+  playBlackHoleExit() {
+    if (!this.isInitialized || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      // 1. Warp exit harmonic triad shimmer
+      const freqs = [523.25, 783.99, 1046.50]; // C5, G5, C6
+      freqs.forEach((freq, idx) => {
+        const startTime = now + idx * 0.035;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq * 0.8, startTime);
+        osc.frequency.exponentialRampToValueAtTime(freq, startTime + 0.08);
+        gain.gain.setValueAtTime(0.10, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.28);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(startTime);
+        osc.stop(startTime + 0.3);
+      });
+
+      // 2. Rising warp pop & energy surge
+      const noiseOsc = this.ctx.createOscillator();
+      const noiseGain = this.ctx.createGain();
+      const bq = this.ctx.createBiquadFilter();
+      noiseOsc.type = 'triangle';
+      noiseOsc.frequency.setValueAtTime(180, now);
+      noiseOsc.frequency.exponentialRampToValueAtTime(560, now + 0.22);
+      bq.type = 'bandpass';
+      bq.frequency.setValueAtTime(320, now);
+      bq.frequency.exponentialRampToValueAtTime(1200, now + 0.22);
+      bq.Q.setValueAtTime(3.2, now);
+      noiseGain.gain.setValueAtTime(0.09, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      noiseOsc.connect(bq);
+      bq.connect(noiseGain);
+      noiseGain.connect(this.masterGain);
+      noiseOsc.start(now);
+      noiseOsc.stop(now + 0.26);
+    } catch (e) {
+      // Audio fallback
+    }
+  }
 }
 
 window.soundEngine = new SoundEngine();

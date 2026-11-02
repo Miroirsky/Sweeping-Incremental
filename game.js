@@ -1467,7 +1467,367 @@
     }
   }
 
+  // --- Magic Black Hole Portal System for Auto Vacuum Teleportation ---
+  const blackHolePortals = [];
+
+  function spawnBlackHolePortal(x, y, type = 'entrance', baseRadius = 24, duration = 0.72) {
+    const p = {
+      id: Math.random(),
+      x: x,
+      y: y,
+      type: type, // 'entrance' (suction) or 'exit' (emergence)
+      targetRadius: Math.max(16, baseRadius),
+      currentRadius: 0,
+      duration: duration,
+      timer: duration,
+      rotation: Math.random() * Math.PI * 2,
+      swirlSpeed: (type === 'entrance' ? 5.2 : 6.4),
+      particles: [],
+      shockwaves: []
+    };
+
+    // Pre-seed accretion disk particles
+    const particleCount = 28;
+    for (let i = 0; i < particleCount; i++) {
+      const dist = type === 'entrance'
+        ? p.targetRadius * (0.8 + Math.random() * 1.5)
+        : p.targetRadius * (0.15 + Math.random() * 0.4);
+      const angle = Math.random() * Math.PI * 2;
+      p.particles.push({
+        dist: dist,
+        angle: angle,
+        speed: (type === 'entrance' ? -1 : 1) * (20 + Math.random() * 28),
+        rotSpeed: 3.5 + Math.random() * 3.5,
+        size: 1.4 + Math.random() * 2.2,
+        alpha: 0.5 + Math.random() * 0.5,
+        color: Math.random() < 0.45 ? '168, 85, 247' : (Math.random() < 0.75 ? '56, 189, 248' : '244, 114, 182')
+      });
+    }
+
+    // Opening shockwave ripple
+    p.shockwaves.push({
+      r: 4,
+      maxR: p.targetRadius * 2.3,
+      alpha: 0.9,
+      width: 2.5,
+      speed: p.targetRadius * 3.8
+    });
+
+    blackHolePortals.push(p);
+    return p;
+  }
+
+  function updateBlackHolePortals(dt) {
+    if (blackHolePortals.length === 0) return;
+    for (let i = blackHolePortals.length - 1; i >= 0; i--) {
+      const p = blackHolePortals[i];
+      p.timer -= dt;
+      if (p.timer <= 0) {
+        blackHolePortals.splice(i, 1);
+        continue;
+      }
+
+      const elapsed = p.duration - p.timer;
+      const openTime = 0.16;
+      const closeTime = 0.22;
+
+      let scale = 1.0;
+      if (elapsed < openTime) {
+        const t = elapsed / openTime;
+        scale = Math.sin(t * Math.PI * 0.5) * (1.0 + 0.16 * (1.0 - t));
+      } else if (p.timer < closeTime) {
+        const t = Math.max(0, p.timer / closeTime);
+        scale = t * t;
+      }
+      p.currentRadius = p.targetRadius * Math.max(0, scale);
+      p.rotation += p.swirlSpeed * dt;
+
+      // Collapse shockwave trigger
+      if (p.timer < closeTime && !p.hasCloseShockwave) {
+        p.hasCloseShockwave = true;
+        p.shockwaves.push({
+          r: Math.max(2, p.currentRadius * 0.4),
+          maxR: p.targetRadius * 2.2,
+          alpha: 0.9,
+          width: 2.8,
+          speed: p.targetRadius * 4.2
+        });
+      }
+
+      // Update shockwaves
+      for (let sIdx = p.shockwaves.length - 1; sIdx >= 0; sIdx--) {
+        const sw = p.shockwaves[sIdx];
+        sw.r += sw.speed * dt;
+        sw.alpha -= dt * 1.6;
+        if (sw.alpha <= 0 || sw.r >= sw.maxR) {
+          p.shockwaves.splice(sIdx, 1);
+        }
+      }
+
+      // Update particles
+      for (let ptIdx = p.particles.length - 1; ptIdx >= 0; ptIdx--) {
+        const pt = p.particles[ptIdx];
+        pt.dist += pt.speed * dt;
+        pt.angle += (pt.rotSpeed / Math.max(0.25, pt.dist / p.targetRadius)) * dt;
+
+        if (p.type === 'entrance') {
+          if (pt.dist <= p.targetRadius * 0.2) {
+            if (p.timer > closeTime) {
+              pt.dist = p.targetRadius * (1.3 + Math.random() * 0.8);
+              pt.alpha = 0.7 + Math.random() * 0.3;
+            } else {
+              p.particles.splice(ptIdx, 1);
+              continue;
+            }
+          }
+        } else {
+          if (pt.dist >= p.targetRadius * 2.2) {
+            if (p.timer > closeTime) {
+              pt.dist = p.targetRadius * (0.15 + Math.random() * 0.3);
+              pt.alpha = 0.85;
+            } else {
+              p.particles.splice(ptIdx, 1);
+              continue;
+            }
+          }
+        }
+      }
+
+      // Maintain particle count during active lifetime
+      if (p.particles.length < 24 && p.timer > closeTime) {
+        p.particles.push({
+          dist: p.type === 'entrance' ? p.targetRadius * 1.8 : p.targetRadius * 0.2,
+          angle: Math.random() * Math.PI * 2,
+          speed: (p.type === 'entrance' ? -1 : 1) * (20 + Math.random() * 26),
+          rotSpeed: 3.2 + Math.random() * 3.0,
+          size: 1.3 + Math.random() * 2.0,
+          alpha: 0.8,
+          color: Math.random() < 0.5 ? '168, 85, 247' : '56, 189, 248'
+        });
+      }
+    }
+  }
+
+  function drawBlackHolePortal(portal, isForeground) {
+    if (!portal || portal.currentRadius <= 0.5) return;
+    const r = portal.currentRadius;
+
+    overlayCtx.save();
+
+    if (!isForeground) {
+      // 1. Deep Gravitational Lensing / Cosmic Purple Nebula Glow
+      const glowR = r * 2.5;
+      const glowGrad = overlayCtx.createRadialGradient(portal.x, portal.y, r * 0.4, portal.x, portal.y, glowR);
+      glowGrad.addColorStop(0.0, 'rgba(12, 4, 24, 0.95)');
+      glowGrad.addColorStop(0.25, 'rgba(147, 51, 234, 0.48)'); // deep electric purple
+      glowGrad.addColorStop(0.6, 'rgba(56, 189, 248, 0.24)'); // cyan fringe
+      glowGrad.addColorStop(0.85, 'rgba(192, 132, 252, 0.08)');
+      glowGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+      overlayCtx.fillStyle = glowGrad;
+      overlayCtx.beginPath();
+      overlayCtx.arc(portal.x, portal.y, glowR, 0, Math.PI * 2);
+      overlayCtx.fill();
+
+      // 2. Tilted Swirling Accretion Disk (Interstellar-style)
+      overlayCtx.save();
+      overlayCtx.translate(portal.x, portal.y);
+      overlayCtx.rotate(portal.rotation);
+      overlayCtx.scale(1.0, 0.58);
+
+      const diskR = r * 1.75;
+      const diskGrad = overlayCtx.createRadialGradient(0, 0, r * 0.68, 0, 0, diskR);
+      diskGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.95)'); // blistering photon orbit
+      diskGrad.addColorStop(0.2, 'rgba(168, 85, 247, 0.88)'); // violet plasma
+      diskGrad.addColorStop(0.5, 'rgba(236, 72, 153, 0.65)'); // magenta heat
+      diskGrad.addColorStop(0.8, 'rgba(56, 189, 248, 0.32)'); // cyan fringe
+      diskGrad.addColorStop(1.0, 'rgba(147, 51, 234, 0)');
+      overlayCtx.fillStyle = diskGrad;
+      overlayCtx.beginPath();
+      overlayCtx.arc(0, 0, diskR, 0, Math.PI * 2);
+      overlayCtx.fill();
+
+      // Swirling spiral arms (3 logarithmic spiral arms)
+      overlayCtx.lineWidth = Math.max(1.5, r * 0.08);
+      for (let arm = 0; arm < 3; arm++) {
+        const armOffset = (arm * Math.PI * 2) / 3;
+        overlayCtx.beginPath();
+        for (let step = 0; step < 22; step++) {
+          const ratio = step / 21;
+          const theta = armOffset + ratio * Math.PI * 1.5;
+          const rad = r * (0.72 + ratio * 0.98);
+          const px = Math.cos(theta) * rad;
+          const py = Math.sin(theta) * rad;
+          if (step === 0) overlayCtx.moveTo(px, py);
+          else overlayCtx.lineTo(px, py);
+        }
+        overlayCtx.strokeStyle = arm === 0
+          ? 'rgba(255, 255, 255, 0.75)'
+          : (arm === 1 ? 'rgba(56, 189, 248, 0.65)' : 'rgba(244, 114, 182, 0.65)');
+        overlayCtx.stroke();
+      }
+      overlayCtx.restore();
+
+      // 3. Singularity / Event Horizon Void (Pure Pitch-Black Depth)
+      const voidR = r * 0.72;
+      const voidGrad = overlayCtx.createRadialGradient(portal.x, portal.y, 0, portal.x, portal.y, voidR);
+      voidGrad.addColorStop(0.0, '#000000');
+      voidGrad.addColorStop(0.75, '#020006');
+      voidGrad.addColorStop(1.0, '#130424');
+      overlayCtx.fillStyle = voidGrad;
+      overlayCtx.beginPath();
+      overlayCtx.arc(portal.x, portal.y, voidR, 0, Math.PI * 2);
+      overlayCtx.fill();
+
+      // 4. Photon Sphere (Intense Neon Boundary Line)
+      overlayCtx.save();
+      overlayCtx.beginPath();
+      overlayCtx.arc(portal.x, portal.y, voidR, 0, Math.PI * 2);
+      overlayCtx.strokeStyle = 'rgba(240, 246, 255, 0.92)';
+      overlayCtx.lineWidth = Math.max(1.2, r * 0.065);
+      overlayCtx.shadowColor = '#a855f7';
+      overlayCtx.shadowBlur = 9;
+      overlayCtx.stroke();
+      overlayCtx.restore();
+
+    } else {
+      // FOREGROUND: Overlying arcane orbit rings, stardust vortex particles, shockwaves
+
+      // 1. Rotating Arcane Orbit Ring & Glyphs
+      overlayCtx.save();
+      overlayCtx.translate(portal.x, portal.y);
+      overlayCtx.rotate(-portal.rotation * 0.45);
+      overlayCtx.beginPath();
+      overlayCtx.arc(0, 0, r * 1.25, 0, Math.PI * 2);
+      overlayCtx.strokeStyle = 'rgba(192, 132, 252, 0.48)';
+      overlayCtx.lineWidth = 1.3;
+      overlayCtx.setLineDash([5, 9]);
+      overlayCtx.stroke();
+
+      // 4 Cardinal Mystic Ticks
+      overlayCtx.setLineDash([]);
+      overlayCtx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
+      overlayCtx.lineWidth = 1.5;
+      for (let m = 0; m < 4; m++) {
+        const ma = (m * Math.PI) / 2;
+        const mx1 = Math.cos(ma) * (r * 1.14);
+        const my1 = Math.sin(ma) * (r * 1.14);
+        const mx2 = Math.cos(ma) * (r * 1.36);
+        const my2 = Math.sin(ma) * (r * 1.36);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(mx1, my1);
+        overlayCtx.lineTo(mx2, my2);
+        overlayCtx.stroke();
+      }
+      overlayCtx.restore();
+
+      // 2. Swirling Stardust Particles / Void Embers
+      const scaleRatio = r / portal.targetRadius;
+      for (let i = 0; i < portal.particles.length; i++) {
+        const pt = portal.particles[i];
+        const px = portal.x + Math.cos(pt.angle) * pt.dist;
+        const py = portal.y + Math.sin(pt.angle) * pt.dist * 0.72; // match tilt
+
+        overlayCtx.beginPath();
+        overlayCtx.arc(px, py, Math.max(0.5, pt.size * scaleRatio), 0, Math.PI * 2);
+        overlayCtx.fillStyle = `rgba(${pt.color}, ${pt.alpha})`;
+        overlayCtx.shadowColor = `rgb(${pt.color})`;
+        overlayCtx.shadowBlur = 6;
+        overlayCtx.fill();
+      }
+
+      // 3. Gravitational Shockwave Ripples
+      for (let sIdx = 0; sIdx < portal.shockwaves.length; sIdx++) {
+        const sw = portal.shockwaves[sIdx];
+        overlayCtx.save();
+        overlayCtx.beginPath();
+        overlayCtx.arc(portal.x, portal.y, sw.r, 0, Math.PI * 2);
+        overlayCtx.strokeStyle = `rgba(168, 85, 247, ${Math.max(0, sw.alpha)})`;
+        overlayCtx.lineWidth = sw.width;
+        overlayCtx.shadowColor = '#38bdf8';
+        overlayCtx.shadowBlur = 8;
+        overlayCtx.stroke();
+        overlayCtx.restore();
+      }
+    }
+
+    overlayCtx.restore();
+  }
+
+  function drawBlackHolePortals(isForeground) {
+    if (blackHolePortals.length === 0) return;
+    for (let i = 0; i < blackHolePortals.length; i++) {
+      drawBlackHolePortal(blackHolePortals[i], isForeground);
+    }
+  }
+
+  function getRandomRoomPosition(margin) {
+    const pad = margin || 30;
+    const minX = roomX + pad;
+    const maxX = roomX + roomSize - pad;
+    const minY = roomY + pad;
+    const maxY = roomY + roomSize - pad;
+    return {
+      x: minX + Math.random() * Math.max(20, maxX - minX),
+      y: minY + Math.random() * Math.max(20, maxY - minY)
+    };
+  }
+
+  function depositBotAtStation(bot, s, dockX) {
+    const stationCap = getStationCapacity();
+    const stationRemaining = Math.max(0, stationCap - stationStorage.stored);
+
+    const depDust = bot.storedDust || 0;
+    const depDirt = bot.storedDirt || 0;
+    const totalDep = depDust + depDirt;
+
+    if (stationRemaining > 0.0001 && totalDep > 0.0001) {
+      const actualTotalDep = Math.min(totalDep, stationRemaining);
+      const ratio = actualTotalDep / totalDep;
+      const actualDust = depDust * ratio;
+      const actualDirt = depDirt * ratio;
+
+      stationStorage.dust += actualDust;
+      stationStorage.dirt += actualDirt;
+
+      bot.storedDust = Math.max(0, depDust - actualDust);
+      bot.storedDirt = Math.max(0, depDirt - actualDirt);
+      bot.stored = bot.storedDust + bot.storedDirt;
+
+      spawnStationDepositParticles(bot.x, bot.y);
+      if (window.soundEngine && window.soundEngine.playPickContentSound) {
+        window.soundEngine.playPickContentSound();
+      }
+      if (actualTotalDep > 0.005) {
+        spawnFloatingText(`+${actualTotalDep.toFixed(2)}g deposited`, dockX, s.y - 8, '#38bdf8');
+      }
+      return actualTotalDep;
+    } else if (stationRemaining <= 0.0001 && totalDep > 0.0001) {
+      if (Math.random() < 0.3) {
+        spawnFloatingText('Station Full!', dockX, s.y - 8, '#ef4444');
+      }
+    }
+    return 0;
+  }
+
+  function startAutoCleanerTeleport(bot) {
+    bot.state = 'teleporting_in';
+    bot.teleportTimer = 0.48;
+    bot.teleportDuration = 0.48;
+    bot.teleportScale = 1.0;
+    bot.teleportSwirl = 0;
+    bot.portalOrigin = { x: bot.x, y: bot.y };
+
+    const margin = Math.max(25, bot.radius * 2.5);
+    bot.teleportTarget = getRandomRoomPosition(margin);
+
+    spawnBlackHolePortal(bot.x, bot.y, 'entrance', Math.max(16, bot.radius * 2.3), 0.72);
+    if (window.soundEngine && window.soundEngine.playBlackHoleEntrance) {
+      window.soundEngine.playBlackHoleEntrance();
+    }
+  }
+
   function updateAutoCleanersSimulation(dt, now) {
+    updateBlackHolePortals(dt);
     if (autoCleaners.length === 0) return;
 
     const currentRadius = getAutoVacuumRadius();
@@ -1496,15 +1856,77 @@
       if (bot.state === 'docked') {
         bot.dockTimer = (bot.dockTimer || 0) - dt;
         if (bot.dockTimer <= 0) {
-          const stationRemaining = getStationCapacity() - stationStorage.stored;
-          if (bot.stored >= bot.capacity - 0.0001 && stationRemaining <= 0.0001) {
-            bot.dockTimer = 0.5; // wait at dock until station has room
-          } else {
-            bot.state = 'cleaning';
-            bot.angle = Math.PI + (Math.random() - 0.5) * 0.6; // head left back into room
+          const stationCap = getStationCapacity();
+          const stationRemaining = Math.max(0, stationCap - stationStorage.stored);
+
+          // If still carrying dust/dirt and station has space, deposit it now!
+          if (stationRemaining > 0.0001 && (bot.stored || 0) > 0.0001) {
+            depositBotAtStation(bot, s, dockX);
+            bot.dockTimer = 0.45;
+            continue;
           }
+
+          if ((bot.stored || 0) >= bot.capacity - 0.0001 && stationRemaining <= 0.0001) {
+            bot.dockTimer = 0.5; // wait at dock until station has room
+            continue;
+          }
+
+          // Successfully deposited or ready to resume: teleport into the room!
+          startAutoCleanerTeleport(bot);
         }
         continue; // stationary while docked
+      }
+
+      // State: Sucked into Entrance Black Hole Portal
+      if (bot.state === 'teleporting_in') {
+        bot.teleportTimer -= dt;
+        const progress = Math.min(1.0, Math.max(0, 1.0 - (bot.teleportTimer / bot.teleportDuration)));
+        bot.teleportScale = Math.max(0, 1.0 - progress * progress);
+        bot.teleportSwirl = (bot.teleportSwirl || 0) + dt * 14.0;
+
+        if (bot.portalOrigin) {
+          bot.x += (bot.portalOrigin.x - bot.x) * Math.min(1.0, dt * 10.0);
+          bot.y += (bot.portalOrigin.y - bot.y) * Math.min(1.0, dt * 10.0);
+        }
+
+        if (bot.teleportTimer <= 0) {
+          bot.state = 'teleporting_out';
+          bot.teleportTimer = 0.48;
+          bot.teleportDuration = 0.48;
+          bot.teleportScale = 0.0;
+          bot.teleportSwirl = -Math.PI * 4.0;
+
+          bot.x = bot.teleportTarget.x;
+          bot.y = bot.teleportTarget.y;
+          bot.prevX = bot.x;
+          bot.prevY = bot.y;
+
+          spawnBlackHolePortal(bot.x, bot.y, 'exit', Math.max(16, bot.radius * 2.3), 0.72);
+          if (window.soundEngine && window.soundEngine.playBlackHoleExit) {
+            window.soundEngine.playBlackHoleExit();
+          }
+        }
+        continue;
+      }
+
+      // State: Emerging from Exit Black Hole Portal
+      if (bot.state === 'teleporting_out') {
+        bot.teleportTimer -= dt;
+        const progress = Math.min(1.0, Math.max(0, 1.0 - (bot.teleportTimer / bot.teleportDuration)));
+        const sinProg = Math.sin(progress * Math.PI * 0.5);
+        bot.teleportScale = Math.min(1.0, sinProg * (1.0 + 0.16 * (1.0 - progress)));
+        bot.teleportSwirl = (1.0 - progress) * (-Math.PI * 3.5);
+
+        if (bot.teleportTimer <= 0) {
+          bot.state = 'cleaning';
+          bot.teleportScale = 1.0;
+          bot.teleportSwirl = 0;
+          bot.angle = Math.random() * Math.PI * 2;
+          bot.turnTimer = 1.0 + Math.random() * 2.0;
+          spawnFloatingText('✦ Deployed', bot.x, bot.y - bot.radius - 8, '#38bdf8');
+          spawnDustParticles(bot.x, bot.y, 4, false);
+        }
+        continue;
       }
 
       // State: Returning to station
@@ -1535,39 +1957,7 @@
         if (Math.hypot(dockX - bot.x, dockY - bot.y) < Math.max(6.0, bot.radius * 0.5)) {
           bot.state = 'docked';
           bot.dockTimer = 0.65; // brief unload pause
-
-          const stationCap = getStationCapacity();
-          const stationRemaining = Math.max(0, stationCap - stationStorage.stored);
-
-          const depDust = bot.storedDust || 0;
-          const depDirt = bot.storedDirt || 0;
-          const totalDep = depDust + depDirt;
-
-          if (stationRemaining > 0.0001 && totalDep > 0.0001) {
-            const actualTotalDep = Math.min(totalDep, stationRemaining);
-            const ratio = actualTotalDep / totalDep;
-            const actualDust = depDust * ratio;
-            const actualDirt = depDirt * ratio;
-
-            stationStorage.dust += actualDust;
-            stationStorage.dirt += actualDirt;
-
-            bot.storedDust = Math.max(0, depDust - actualDust);
-            bot.storedDirt = Math.max(0, depDirt - actualDirt);
-            bot.stored = bot.storedDust + bot.storedDirt;
-
-            spawnStationDepositParticles(bot.x, bot.y);
-            if (window.soundEngine && window.soundEngine.playPickContentSound) {
-              window.soundEngine.playPickContentSound();
-            }
-            if (actualTotalDep > 0.005) {
-              spawnFloatingText(`+${actualTotalDep.toFixed(2)}g deposited`, dockX, s.y - 8, '#38bdf8');
-            }
-          } else if (stationRemaining <= 0.0001 && totalDep > 0.0001) {
-            if (Math.random() < 0.3) {
-              spawnFloatingText('Station Full!', dockX, s.y - 8, '#ef4444');
-            }
-          }
+          depositBotAtStation(bot, s, dockX);
         }
         continue;
       }
@@ -1711,16 +2101,25 @@
 
   function drawAutoCleaner(bot) {
     if (!bot || isNaN(bot.x) || isNaN(bot.y)) return;
+    const scale = bot.teleportScale != null ? bot.teleportScale : 1.0;
+    if (scale <= 0.005) return;
+
     const r = Math.max(6.0, bot.radius || getAutoVacuumRadius() || 12.0);
     const topOffsetRatio = (Values.getAutoVacuumTopVisualOffset)
       ? Values.getAutoVacuumTopVisualOffset()
       : ((Values.autoVacuum && Values.autoVacuum.topVisualOffset != null) ? Values.autoVacuum.topVisualOffset : 0.15);
     const topOffsetY = -r * topOffsetRatio;
-    const rotation = (bot.angle != null ? bot.angle : 0) - Math.PI * 0.5;
+    const rotation = (bot.angle != null ? bot.angle : 0) - Math.PI * 0.5 + (bot.teleportSwirl || 0);
 
     overlayCtx.save();
     overlayCtx.imageSmoothingEnabled = true;
     overlayCtx.imageSmoothingQuality = 'high';
+
+    if (scale !== 1.0) {
+      overlayCtx.translate(bot.x, bot.y);
+      overlayCtx.scale(scale, scale);
+      overlayCtx.translate(-bot.x, -bot.y);
+    }
 
     // 1. Draw Bottom image (Base under which pixels are cleaning)
     if (bobBottomImg.complete && bobBottomImg.naturalWidth > 0) {
@@ -1821,6 +2220,12 @@
         overlayCtx.fillStyle = '#38bdf8';
         overlayCtx.fillText('Unloading...', bot.x, labelY);
       }
+    } else if (bot.state === 'teleporting_in') {
+      overlayCtx.fillStyle = '#c084fc';
+      overlayCtx.fillText('✦ Void Warp', bot.x, labelY);
+    } else if (bot.state === 'teleporting_out') {
+      overlayCtx.fillStyle = '#38bdf8';
+      overlayCtx.fillText('✦ Emerging', bot.x, labelY);
     } else if (bot.stored > 0.01) {
       overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       overlayCtx.fillText(`${bot.stored.toFixed(2)}g`, bot.x, labelY);
@@ -2191,8 +2596,14 @@
     // Draw Station (Docking Pad, Silo Tank, Status)
     drawStation();
 
+    // Draw Black Hole Portals (Background: singularity void, accretion disk, photon ring)
+    drawBlackHolePortals(false);
+
     // Draw active autonomous cleaners
     drawAutoCleaners();
+
+    // Draw Black Hole Portals (Foreground: swirling stardust vortex, arcane rings, shockwaves)
+    drawBlackHolePortals(true);
 
     // Update and draw floating feedback texts
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
@@ -2370,6 +2781,7 @@
     transferParticles.length = 0;
     splashParticles.length = 0;
     autoCleaners.length = 0;
+    blackHolePortals.length = 0;
     floatingTexts.length = 0;
     autoCleanerParticles.length = 0;
     dirtZones = [];
