@@ -223,9 +223,9 @@ var Values = {
       }
     },
     dirtShop: {
-      suckZone: {
-        name: "Suck Zone",
-        image: "Assets/Upgrades/Dirt/Suck Zone.png",
+      size: {
+        name: "Size",
+        image: "Assets/Upgrades/Dirt/Size.png",
         currency: "dirt",
         require: { upgrade: "dirt", level: 1 }, // Requires Dirt level 1 to see this upgrade
         effect: 0.2,
@@ -233,13 +233,13 @@ var Values = {
         mult: 10.0,
         level: 0,
         getDesc(upg) {
-          return `+${(upg.effect * 100).toFixed(0)}% suck zone radius`;
+          return `+${(upg.effect * 100).toFixed(0)}% vacuum size`;
         },
         getEffect(upg) {
-          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Suck Zone`;
+          return `+${(upg.level * upg.effect * 100).toFixed(0)}% Size`;
         },
         getStat(upg) {
-          return `${(Values.getEffectiveSuckMultiplier() * 100).toFixed(0)}%`;
+          return `${(Values.getEffectiveSizeMultiplier() * 100).toFixed(0)}%`;
         }
       },
       autoEfficiency: {
@@ -320,11 +320,10 @@ var Values = {
     return (this.vacuum.storeRate != null ? this.vacuum.storeRate : 1.0) * multiplier;
   },
 
-  // Effective suck zone radius multiplier (1.0 + level * 0.20)
-  getEffectiveSuckMultiplier() {
-    const upg = (this.shops.dirtShop && this.shops.dirtShop.suckZone) ||
-                (this.shops.dirtShop && this.shops.dirtShop.SuckZone) ||
-                (this.shops.dustShop && this.shops.dustShop.suckZone);
+  // Effective vacuum size multiplier (1.0 + level * 0.20)
+  getEffectiveSizeMultiplier() {
+    const upg = (this.shops.dirtShop && (this.shops.dirtShop.size || this.shops.dirtShop.Size)) ||
+                (this.shops.dustShop && (this.shops.dustShop.size || this.shops.dustShop.Size));
     const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
     return multiplier;
   },
@@ -351,7 +350,7 @@ var Values = {
       const alias = key === 'cleanrate' ? 'efficiency' :
                     (key === 'capacitymult' ? 'capacity' :
                     (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
-                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' :
+                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' || key === 'size' ? 'size' :
                     (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
                     (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))));
       upg = (this.shops.dustShop && this.shops.dustShop[alias]) ||
@@ -375,7 +374,7 @@ var Values = {
       const alias = key === 'cleanrate' ? 'efficiency' :
                     (key === 'capacitymult' ? 'capacity' :
                     (key === 'storingspeed' || key === 'storing speed' || key === 'storing_speed' ? 'storingSpeed' :
-                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' ? 'suckZone' :
+                    (key === 'suckzone' || key === 'suck zone' || key === 'suck_zone' || key === 'size' ? 'size' :
                     (key === 'autocleaner' || key === 'auto cleaner' || key === 'auto_cleaner' ? 'autoCleaner' :
                     (key === 'autoefficiency' || key === 'auto efficiency' || key === 'auto_efficiency' || key === 'autoefficienty' || key === 'auto efficienty' ? 'autoEfficiency' : key)))));
       if (shop[alias]) return shop[alias];
@@ -426,9 +425,10 @@ var Values = {
     return this.checkRequirement(upg.require);
   },
 
-  // Normalized vacuum radius ratio (1% of room dimension)
+  // Normalized vacuum radius ratio (1% of room dimension base) scaled by Size upgrade
   getSizeRatio() {
-    return this.vacuum.size >= 0.05 ? (this.vacuum.size * 0.1) : this.vacuum.size;
+    const baseRatio = this.vacuum.size >= 0.05 ? (this.vacuum.size * 0.1) : this.vacuum.size;
+    return baseRatio * this.getEffectiveSizeMultiplier();
   },
 
   // Normalized auto vacuum radius ratio

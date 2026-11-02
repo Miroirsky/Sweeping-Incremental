@@ -180,14 +180,6 @@
     return Values.getEffectiveCapacity();
   }
 
-  function getEffectiveSuckMultiplier() {
-    return Values.getEffectiveSuckMultiplier ? Values.getEffectiveSuckMultiplier() : 1.0;
-  }
-
-  function getEffectiveSuckRadius() {
-    return cleanerRadius * getEffectiveSuckMultiplier();
-  }
-
   let isSpaceHeld = false;
   let isRightMouseDown = false;
   let isShopOpen = false;
@@ -250,7 +242,6 @@
     uniform sampler2D u_dirt_mask;
     uniform vec2 u_cleaner; // gl_FragCoord px
     uniform float u_cleaner_radius;
-    uniform float u_suck_radius;
     uniform float u_dust_fill; // [0.0 .. 1.0] vacuum canister dust fraction
     uniform float u_dirt_fill; // [0.0 .. 1.0] vacuum canister dirt fraction
     uniform float u_cleaner_is_full; // 1.0 if vacuum canister is full
@@ -418,25 +409,6 @@
         // Soft wall ambient occlusion inside perimeter of room
         float wallShadow = smoothstep(0.0, 16.0, roomEdgeDist);
         surface *= (0.76 + 0.24 * wallShadow);
-      }
-
-      // ==========================================
-      // 3.9 SUCK ZONE (Black transparent circle behind the bot, overlaying room)
-      // ==========================================
-      float distToCleaner = length(fragCoord - u_cleaner);
-      float r = u_cleaner_radius;
-      float rSuck = u_suck_radius;
-
-      if (rSuck > r + 0.1) {
-        float suckMask = clamp(rSuck - distToCleaner + 0.6, 0.0, 1.0);
-        if (suckMask > 0.0) {
-          // Black transparent circle overlaying the room (32% opacity)
-          surface = mix(surface, vec3(0.0, 0.0, 0.0), 0.32 * suckMask);
-
-          // Subtle dark outer rim
-          float suckRim = smoothstep(1.8, 0.0, abs(distToCleaner - rSuck));
-          surface = mix(surface, vec3(0.0, 0.0, 0.0), 0.40 * suckRim);
-        }
       }
 
       gl_FragColor = vec4(surface, 1.0);
@@ -748,6 +720,7 @@
 
       // Sync active auto-cleaners and open station when autoCleaner upgrade is bought
       updateRoomGeometry();
+      clampCleanerToPlayfield(cleanerPos, cleanerRadius);
       syncAutoCleaners();
 
       updateDirtShopVisibility();
@@ -1079,8 +1052,7 @@
     const scaleFactor = GRID_RES / 100.0;
     const vx = ((cleanerPos.x - roomX) / roomSize) * GRID_RES;
     const vy = ((cleanerPos.y - roomY) / roomSize) * GRID_RES;
-    const suckRadius = getEffectiveSuckRadius();
-    const minSafeDistCleaner = (suckRadius / roomSize) * GRID_RES + Math.max(6, GRID_RES * 0.08);
+    const minSafeDistCleaner = (cleanerRadius / roomSize) * GRID_RES + Math.max(6, GRID_RES * 0.08);
     const margin = Math.max(4, Math.floor(GRID_RES * 0.12));
     const range = Math.max(8, GRID_RES - margin * 2);
 
@@ -1191,8 +1163,8 @@
           if (currentScreenDirtGrams >= maxDirt) break;
           const cellWorldX = roomX + (cx / GRID_RES) * roomSize;
           const distCleaner = Math.hypot(cellWorldX - cleanerPos.x, dyCleaner);
-          if (distCleaner <= suckRadius + 2.0) {
-            continue; // never spawn dirt under cleaner nozzle / suck zone
+          if (distCleaner <= cleanerRadius + 2.0) {
+            continue; // never spawn dirt under cleaner nozzle
           }
 
           const dx = cx - zone.x;
@@ -1261,10 +1233,9 @@
   function spawnDustParticles(x, y, count = 1, isDirt = false) {
     const maxDustMotes = (Values.particles && Values.particles.maxDustMotes) || 80;
     if (particles.length >= maxDustMotes) return;
-    const currentSuckR = getEffectiveSuckRadius();
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const spawnDist = currentSuckR + 4 + Math.random() * 10;
+      const spawnDist = cleanerRadius + 4 + Math.random() * 10;
       particles.push({
         x: x + Math.cos(angle) * spawnDist,
         y: y + Math.sin(angle) * spawnDist,
@@ -2729,8 +2700,9 @@
           const currentShopData = Values.shops[shopKey];
           if (!savedShop || !currentShopData) continue;
           for (const upgKey of Object.keys(savedShop)) {
-            if (currentShopData[upgKey] && typeof savedShop[upgKey] === 'number') {
-              currentShopData[upgKey].level = savedShop[upgKey];
+            const targetKey = (upgKey === 'suckZone' || upgKey === 'suck_zone') ? 'size' : upgKey;
+            if (currentShopData[targetKey] && typeof savedShop[upgKey] === 'number') {
+              currentShopData[targetKey].level = savedShop[upgKey];
             }
           }
         }
@@ -2944,12 +2916,11 @@
         }
       }
 
-      // Convert cleaner position to grid coords (cleans under the suck zone whether moving or stationary!)
+      // Convert cleaner position to grid coords (cleans under the vacuum whether moving or stationary!)
       if (cleanerPos.x < roomX + roomSize) {
-        const suckRadius = getEffectiveSuckRadius();
         const gx = ((cleanerPos.x - roomX) / roomSize) * GRID_RES;
         const gy = ((cleanerPos.y - roomY) / roomSize) * GRID_RES;
-        const gr = (suckRadius / roomSize) * GRID_RES;
+        const gr = (cleanerRadius / roomSize) * GRID_RES;
         const effectiveGr = Math.max(gr, 0.75); // Covers at least the pixel under center
 
         const minX = Math.max(0, Math.floor(gx - effectiveGr));
@@ -3126,11 +3097,10 @@
       dustTextureNeedsUpdate = true;
     }
 
-    // Always keep current position protected from dust reappearance so dust NEVER reappears under vacuum suck zone
-    const currentSuckRadius = getEffectiveSuckRadius();
+    // Always keep current position protected from dust reappearance so dust NEVER reappears under vacuum
     const cgx = ((cleanerPos.x - roomX) / roomSize) * GRID_RES;
     const cgy = ((cleanerPos.y - roomY) / roomSize) * GRID_RES;
-    const cgr = Math.max((currentSuckRadius / roomSize) * GRID_RES, 0.75);
+    const cgr = Math.max((cleanerRadius / roomSize) * GRID_RES, 0.75);
     const cminX = Math.max(0, Math.floor(cgx - cgr));
     const cmaxX = Math.min(GRID_RES - 1, Math.ceil(cgx + cgr));
     const cminY = Math.max(0, Math.floor(cgy - cgr));
@@ -3204,9 +3174,6 @@
 
     const uCleanerRadius = gl.getUniformLocation(shaderProgram, 'u_cleaner_radius');
     gl.uniform1f(uCleanerRadius, cleanerRadius * dpr);
-
-    const uSuckRadius = gl.getUniformLocation(shaderProgram, 'u_suck_radius');
-    gl.uniform1f(uSuckRadius, getEffectiveSuckRadius() * dpr);
 
     // Cleaner storage fill uniforms (circle fills with grey for dust, brown for dirt)
     const effectiveCap = getMaxVacuumCapacity();
