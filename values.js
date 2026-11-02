@@ -40,7 +40,7 @@ var Values = {
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
     speed: 0.02,       // Base movement speed ratio (fraction of screen dimension per second)
-    size: 0.05,        // Size ratio (0.25 corresponds to 2.5% of room dimension in getSizeRatio, half of main vacuum)
+    size: 0.1,        // Size ratio (0.25 corresponds to 2.5% of room dimension in getSizeRatio, half of main vacuum)
     topVisualOffset: 0.15, // Visual vertical offset of the top lid (fraction of vacuum radius)
     bottomImage: "Assets/Icons/B.O.B. Bottom.png",
     topImage: "Assets/Icons/B.O.B. Top.png"
