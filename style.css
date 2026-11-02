@@ -525,32 +525,211 @@ body.shop-open .bottom-menu-dock {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
-/* Upgrades Card System Tray (at bottom of screen) */
+/* Upgrades Card Circular Radial Tray (at bottom of screen) */
 .shop-cards-tray {
   position: absolute;
-  bottom: clamp(10px, 2.5vh, 26px);
-  left: 50%;
-  transform: translateX(-50%) translateY(0);
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  gap: clamp(6px, 1.2vw, 18px);
-  max-width: 98vw;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
   z-index: 40;
-  pointer-events: auto;
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .shop-cards-tray.hidden {
   opacity: 0;
   pointer-events: none;
-  transform: translateX(-50%) translateY(120%);
 }
 
-/* Upgrade Card - strictly 1000x1500 (2:3 aspect ratio), transparent background, no outlines, window-adaptive */
-.upgrade-card {
+.vacuum-hub-container,
+.carousel-cards-viewport {
+  transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+}
+
+.shop-cards-tray.hidden .vacuum-hub-container,
+.shop-cards-tray.hidden .carousel-cards-viewport {
+  transform: translateY(120%);
+  opacity: 0;
+}
+
+/* Center Vacuum 1/2 Circle Hub */
+.vacuum-hub-container {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%) translateY(50%);
+  width: clamp(260px, min(34vw, 44vh), 420px);
+  height: clamp(260px, min(34vw, 44vh), 420px);
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: grab;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vacuum-hub-container:active {
+  cursor: grabbing;
+}
+
+.vacuum-hub-glow {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.28) 0%, rgba(255, 208, 128, 0.22) 45%, transparent 72%);
+  filter: blur(14px);
+  pointer-events: none;
+  transition: background 0.35s ease;
+}
+
+body.dirt-shop-active .vacuum-hub-glow {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.28) 0%, rgba(246, 148, 102, 0.26) 45%, transparent 72%);
+}
+
+.vacuum-hub-circle {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
   position: relative;
-  width: clamp(55px, min(14.5vw, 24vh), 160px);
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.55), 0 0 24px rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4px solid #ffffff;
+}
+
+.vacuum-hub-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.vacuum-hub-rim {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 208, 128, 0.45);
+  pointer-events: none;
+  box-shadow: 0 0 16px rgba(255, 208, 128, 0.3), inset 0 0 16px rgba(255, 208, 128, 0.2);
+  transition: border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+body.dirt-shop-active .vacuum-hub-rim {
+  border-color: rgba(246, 148, 102, 0.5);
+  box-shadow: 0 0 16px rgba(246, 148, 102, 0.35), inset 0 0 16px rgba(246, 148, 102, 0.2);
+}
+
+.vacuum-hub-notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) translateY(-50%);
+  width: 32px;
+  height: 5px;
+  background: #ffd080;
+  border-radius: 3px;
+  box-shadow: 0 0 12px #ffd080, 0 0 20px rgba(255, 208, 128, 0.8);
+  pointer-events: none;
+  transition: background 0.35s ease, box-shadow 0.35s ease;
+}
+
+body.dirt-shop-active .vacuum-hub-notch {
+  background: #f69466;
+  box-shadow: 0 0 12px #f69466, 0 0 20px rgba(246, 148, 102, 0.8);
+}
+
+.carousel-cards-viewport {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.carousel-nav-btn {
+  position: absolute;
+  bottom: clamp(70px, 14vh, 130px);
+  width: clamp(40px, 4.5vw, 50px);
+  height: clamp(40px, 4.5vw, 50px);
+  border-radius: 50%;
+  background: rgba(28, 18, 12, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1.5px solid rgba(255, 208, 128, 0.35);
+  color: #ffd080;
+  font-size: clamp(22px, 2.5vw, 28px);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 120;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: auto;
+}
+
+.carousel-nav-btn:hover {
+  background: rgba(55, 36, 24, 0.95);
+  border-color: #ffd080;
+  transform: scale(1.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 14px rgba(255, 208, 128, 0.45);
+}
+
+.carousel-nav-btn:active {
+  transform: scale(0.96);
+}
+
+.carousel-prev-btn {
+  left: calc(50% - clamp(230px, 32vw, 380px));
+}
+
+.carousel-next-btn {
+  right: calc(50% - clamp(230px, 32vw, 380px));
+}
+
+body.dirt-shop-active .carousel-nav-btn {
+  border-color: rgba(246, 148, 102, 0.4);
+  color: #f69466;
+}
+
+body.dirt-shop-active .carousel-nav-btn:hover {
+  border-color: #f69466;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 14px rgba(246, 148, 102, 0.45);
+}
+
+.carousel-scroll-hint {
+  display: none;
+}
+
+.carousel-scroll-hint.faded {
+  opacity: 0;
+}
+
+.carousel-scroll-hint span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #c9b19e;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* Upgrade Card - Radial Wheel Layout */
+.upgrade-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: clamp(75px, min(14.5vw, 22vh), 145px);
   aspect-ratio: 1000 / 1500;
   container-type: inline-size;
   border-radius: 0;
@@ -561,21 +740,61 @@ body.shop-open .bottom-menu-dock {
   box-shadow: none;
   cursor: pointer;
   user-select: none;
-  transform-style: preserve-3d;
-  will-change: transform, filter;
-  transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2),
-              filter 0.35s ease;
+  -webkit-user-select: none;
+  will-change: transform, opacity, filter;
+  transition: filter 0.25s ease;
   display: flex;
   flex-direction: column;
+  pointer-events: auto;
+  transform-origin: center center;
 }
 
-.upgrade-card:focus-visible {
-  transform: translateY(-10px) scale(1.05);
+.card-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transform-style: preserve-3d;
+  will-change: transform, filter;
+  transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.upgrade-card.is-middle-card {
+  cursor: pointer;
+}
+
+.upgrade-card.is-middle-card .card-img {
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 14px rgba(255, 208, 128, 0.35));
+}
+
+body.dirt-shop-active .upgrade-card.is-middle-card .card-img {
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 14px rgba(246, 148, 102, 0.4));
+}
+
+.upgrade-card:not(.is-middle-card) {
+  cursor: pointer;
+}
+
+.upgrade-card:not(.is-middle-card):hover {
+  filter: brightness(1.22) drop-shadow(0 10px 22px rgba(0, 0, 0, 0.8));
+}
+
+.upgrade-card:not(.is-middle-card) .card-top-bar {
+  display: none !important;
+}
+
+.upgrade-card:not(.is-middle-card) .card-price-overlay {
+  opacity: 0.85;
+}
+
+.upgrade-card:focus-visible .card-inner {
+  transform: translateY(-8px) scale(1.04);
   filter: drop-shadow(0 16px 28px rgba(0, 0, 0, 0.8));
 }
 
-.upgrade-card:active {
-  transform: translateY(-4px) scale(0.99) !important;
+.upgrade-card:active .card-inner {
+  transform: translateY(-3px) scale(0.99) !important;
 }
 
 /* Card Artwork Image - 1000x1500 ratio with transparent background */
@@ -725,22 +944,24 @@ body.shop-open .bottom-menu-dock {
 
 /* Card Purchase / Shake Animations */
 @keyframes cardPurchased {
-  0% { transform: translateY(-12px) scale(1.04); }
-  40% { transform: translateY(-18px) scale(1.12); filter: drop-shadow(0 0 25px rgba(123, 241, 168, 0.85)) brightness(1.15); }
-  100% { transform: translateY(-12px) scale(1.04); }
+  0% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-16px) scale(1.12); filter: drop-shadow(0 0 25px rgba(123, 241, 168, 0.9)) brightness(1.2); }
+  100% { transform: translateY(0) scale(1); }
 }
 
 @keyframes cardShake {
-  0%, 100% { transform: translateY(-12px) translateX(0); }
-  20%, 60% { transform: translateY(-12px) translateX(-6px); }
-  40%, 80% { transform: translateY(-12px) translateX(6px); }
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
 }
 
-.upgrade-card.purchased-anim {
+.upgrade-card.purchased-anim .card-inner,
+.card-inner.purchased-anim {
   animation: cardPurchased 0.35s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
-.upgrade-card.shake-anim {
+.upgrade-card.shake-anim .card-inner,
+.card-inner.shake-anim {
   animation: cardShake 0.35s ease;
 }
 

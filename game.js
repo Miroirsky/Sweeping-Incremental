@@ -44,6 +44,12 @@
   const dustShopBtn = document.getElementById('dust-shop-btn') || document.getElementById('shop-btn');
   const dirtShopBtn = document.getElementById('dirt-shop-btn');
   const shopCardsTray = document.getElementById('shop-cards-tray');
+  const carouselCardsViewport = document.getElementById('carousel-cards-viewport');
+  const carouselPrevBtn = document.getElementById('carousel-prev-btn');
+  const carouselNextBtn = document.getElementById('carousel-next-btn');
+  const carouselScrollHint = document.getElementById('carousel-scroll-hint');
+  const vacuumHubContainer = document.getElementById('vacuum-hub-container');
+  const vacuumTopSprite = document.getElementById('vacuum-hub-img');
   let currentShop = 'dustShop';
 
   // Default Vacuum Bot Images (B.O.B. Bottom & Top)
@@ -591,24 +597,292 @@
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, GRID_RES, GRID_RES, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, dirtBytes);
   }
 
+  // --- Circular Upgrades Carousel State & Engine ---
+  let carouselAngle = 0;       // Current animated angle (radians)
+  let carouselTargetAngle = 0; // Target snapped angle (radians)
+  let carouselCards = [];      // [{ el, inner, key, index, baseAngle }]
+  let carouselActiveIndex = 0;
+  let carouselIsDragging = false;
+  let carouselDragStartX = 0;
+  let carouselDragStartAngle = 0;
+  let carouselHasDragged = false;
+  let carouselLastDragX = 0;
+  let carouselLastDragTime = 0;
+  let carouselDragVelocity = 0;
+  let carouselWheelSnapTimer = null;
+  let carouselRafId = null;
+  let carouselHasInteracted = false;
+  let carouselEventsInitialized = false;
+
+  function getCarouselRadii() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const cx = w * 0.5;
+    const cy = h; // Center of vacuum circle at bottom edge of screen
+
+    // Radius of vacuum circle (1/2 circle sticking out from bottom)
+    const hubRadius = Math.min(w * 0.17, Math.max(130, h * 0.22));
+
+    // Card dimensions
+    const cardWidth = Math.min(w * 0.13, Math.max(76, h * 0.19));
+    const cardHeight = cardWidth * 1.5;
+
+    // Radius from center of hub to center of each card
+    const cardRadius = hubRadius + cardHeight * 0.5 + 16;
+
+    return { cx, cy, hubRadius, cardRadius, cardWidth, cardHeight };
+  }
+
+  function dismissCarouselHint() {
+    if (carouselHasInteracted) return;
+    carouselHasInteracted = true;
+    if (carouselScrollHint) carouselScrollHint.classList.add('faded');
+  }
+
+  function updateCarouselPositions() {
+    const viewport = carouselCardsViewport || shopCardsTray;
+    if (!viewport || carouselCards.length === 0) return;
+
+    const N = carouselCards.length;
+    const { cx, cy, hubRadius, cardRadius } = getCarouselRadii();
+
+    // Update vacuum hub circle size
+    if (vacuumHubContainer) {
+      const d = Math.round(hubRadius * 2);
+      vacuumHubContainer.style.width = `${d}px`;
+      vacuumHubContainer.style.height = `${d}px`;
+    }
+
+    // Orientate vacuum top image toward the first card (Card 0)
+    if (vacuumTopSprite) {
+      let card0RelAngle = (0 - carouselAngle);
+      card0RelAngle = ((card0RelAngle + Math.PI) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI) - Math.PI;
+      // In B.O.B. Top.png, 180deg points forward/up towards 12 o'clock
+      const bobRotationDeg = 180 + (card0RelAngle * 180 / Math.PI);
+      vacuumTopSprite.style.transform = `rotate(${bobRotationDeg.toFixed(2)}deg)`;
+    }
+
+    let closestDist = Infinity;
+    let newActiveIndex = 0;
+
+    carouselCards.forEach((item, idx) => {
+      // Relative angle from top (12 o'clock): baseAngle - carouselAngle
+      let relAngle = item.baseAngle - carouselAngle;
+      relAngle = ((relAngle + Math.PI) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI) - Math.PI;
+
+      const absDist = Math.abs(relAngle);
+      if (absDist < closestDist) {
+        closestDist = absDist;
+        newActiveIndex = idx;
+      }
+
+      // Radial 2D positioning around the 1/2 circle:
+      // When relAngle = 0 (top/middle): x = cx, y = cy - cardRadius, rotDeg = 0
+      // When relAngle > 0: moves right, rotates clockwise
+      // When relAngle < 0: moves left, rotates counter-clockwise
+      const x = cx + Math.sin(relAngle) * cardRadius;
+      const y = cy - Math.cos(relAngle) * cardRadius;
+      const rotDeg = relAngle * (180 / Math.PI);
+
+      const isMiddle = (idx === newActiveIndex && absDist < 0.22);
+      const scale = isMiddle ? 1.10 : Math.max(0.75, 1.0 - absDist * 0.15);
+
+      // Fade out as cards rotate below the bottom horizon
+      let opacity = 1.0;
+      if (absDist > Math.PI * 0.44) {
+        opacity = Math.max(0, 1.0 - (absDist - Math.PI * 0.44) / (Math.PI * 0.24));
+      }
+
+      const zIndex = isMiddle ? 100 : Math.max(1, Math.round(50 - absDist * 25));
+
+      item.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%) rotate(${rotDeg.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+      item.el.style.opacity = opacity.toFixed(2);
+      item.el.style.zIndex = zIndex;
+
+      item.el.classList.toggle('is-middle-card', isMiddle);
+      item.el.setAttribute('aria-selected', isMiddle ? 'true' : 'false');
+    });
+
+    carouselActiveIndex = newActiveIndex;
+  }
+
+  function startCarouselAnimation() {
+    if (carouselRafId) return;
+    function animLoop() {
+      const diff = carouselTargetAngle - carouselAngle;
+      if (Math.abs(diff) > 0.0003) {
+        carouselAngle += diff * 0.16; // Smooth organic spring ease
+        updateCarouselPositions();
+        carouselRafId = requestAnimationFrame(animLoop);
+      } else {
+        carouselAngle = carouselTargetAngle;
+        updateCarouselPositions();
+        carouselRafId = null;
+      }
+    }
+    carouselRafId = requestAnimationFrame(animLoop);
+  }
+
+  function rotateCarouselByStep(direction) {
+    if (!isShopOpen || carouselCards.length <= 1) return;
+    dismissCarouselHint();
+    const N = carouselCards.length;
+    const step = (2 * Math.PI) / N;
+    const snapIdx = Math.round(carouselTargetAngle / step) + direction;
+    carouselTargetAngle = snapIdx * step;
+    startCarouselAnimation();
+    if (window.soundEngine && window.soundEngine.playPickContentSound) {
+      window.soundEngine.playPickContentSound();
+    }
+  }
+
+  function initCarouselEvents() {
+    if (carouselEventsInitialized || !shopCardsTray) return;
+    carouselEventsInitialized = true;
+
+    // Mouse Wheel Scroll (horizontal or vertical wheel turns the circle)
+    shopCardsTray.addEventListener('wheel', (e) => {
+      if (!isShopOpen || carouselCards.length <= 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      isLeftMouseDown = false;
+      dismissCarouselHint();
+
+      const delta = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
+      const N = carouselCards.length;
+      const step = (2 * Math.PI) / N;
+
+      carouselTargetAngle += (delta > 0 ? 1 : -1) * (step * 0.45);
+      startCarouselAnimation();
+
+      clearTimeout(carouselWheelSnapTimer);
+      carouselWheelSnapTimer = setTimeout(() => {
+        const snapIdx = Math.round(carouselTargetAngle / step);
+        carouselTargetAngle = snapIdx * step;
+        startCarouselAnimation();
+        if (window.soundEngine && window.soundEngine.playPickContentSound) {
+          window.soundEngine.playPickContentSound();
+        }
+      }, 110);
+    }, { passive: false });
+
+    // Pointer / Mouse Drag to rotate circle
+    shopCardsTray.addEventListener('pointerdown', (e) => {
+      if (!isShopOpen || carouselCards.length <= 1) return;
+      if (e.target && e.target.closest('.carousel-nav-btn')) return;
+
+      carouselIsDragging = true;
+      carouselHasDragged = false;
+      carouselDragStartX = e.clientX;
+      carouselDragStartAngle = carouselTargetAngle;
+      carouselLastDragX = e.clientX;
+      carouselLastDragTime = performance.now();
+      carouselDragVelocity = 0;
+      dismissCarouselHint();
+
+      try { shopCardsTray.setPointerCapture?.(e.pointerId); } catch(err) {}
+    });
+
+    shopCardsTray.addEventListener('pointermove', (e) => {
+      if (!carouselIsDragging) return;
+      const dx = e.clientX - carouselDragStartX;
+      if (Math.abs(dx) > 5) {
+        carouselHasDragged = true;
+      }
+
+      const { cardRadius } = getCarouselRadii();
+      const angleDelta = -(dx / cardRadius) * 1.5;
+      carouselTargetAngle = carouselDragStartAngle + angleDelta;
+      carouselAngle = carouselTargetAngle;
+      updateCarouselPositions();
+
+      const now = performance.now();
+      const dt = now - carouselLastDragTime;
+      if (dt > 10) {
+        carouselDragVelocity = (e.clientX - carouselLastDragX) / dt;
+        carouselLastDragX = e.clientX;
+        carouselLastDragTime = now;
+      }
+    });
+
+    const endDrag = (e) => {
+      if (!carouselIsDragging) return;
+      carouselIsDragging = false;
+      try { shopCardsTray.releasePointerCapture?.(e.pointerId); } catch(err) {}
+
+      const N = carouselCards.length;
+      if (N <= 1) return;
+      const step = (2 * Math.PI) / N;
+      const { cardRadius } = getCarouselRadii();
+
+      // Fling momentum on flick
+      if (Math.abs(carouselDragVelocity) > 0.25) {
+        const momentumAngle = -(carouselDragVelocity * 140 / cardRadius);
+        carouselTargetAngle += momentumAngle;
+      }
+
+      // Middle Card Snap: Snap to nearest card directly in the center
+      const snapIdx = Math.round(carouselTargetAngle / step);
+      carouselTargetAngle = snapIdx * step;
+      startCarouselAnimation();
+      if (window.soundEngine && window.soundEngine.playPickContentSound) {
+        window.soundEngine.playPickContentSound();
+      }
+    };
+
+    shopCardsTray.addEventListener('pointerup', endDrag);
+    shopCardsTray.addEventListener('pointercancel', endDrag);
+
+    // Prev & Next Buttons
+    if (carouselPrevBtn) {
+      carouselPrevBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isLeftMouseDown = false;
+        rotateCarouselByStep(-1);
+      });
+      carouselPrevBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        isLeftMouseDown = false;
+      });
+    }
+
+    if (carouselNextBtn) {
+      carouselNextBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isLeftMouseDown = false;
+        rotateCarouselByStep(1);
+      });
+      carouselNextBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        isLeftMouseDown = false;
+      });
+    }
+  }
+
   // Dynamic Cards Shop Rendering & Updates (Dust Shop & Dirt Shop)
   function initShopUI() {
     if (!shopCardsTray) return;
-    shopCardsTray.innerHTML = '';
+    const viewport = carouselCardsViewport || shopCardsTray;
+    viewport.innerHTML = '';
 
     const shopData = (Values.shops && Values.shops[currentShop]) ? Values.shops[currentShop] : Values.shops.dustShop;
     const isDirtShop = (currentShop === 'dirtShop');
     const currentFunds = isDirtShop ? (Values.storage.dirt || 0) : (Values.storage.dust || 0);
 
+    const prevActiveKey = carouselCards[carouselActiveIndex] ? carouselCards[carouselActiveIndex].key : null;
+    carouselCards = [];
+
     const keys = Object.keys(shopData);
-    keys.forEach((key) => {
+    const visibleKeys = keys.filter(key => {
       const upg = shopData[key];
+      return !(Values.isUpgradeVisible && !Values.isUpgradeVisible(upg));
+    });
 
-      // Only display the card if requirement is satisfied!
-      if (Values.isUpgradeVisible && !Values.isUpgradeVisible(upg)) {
-        return;
-      }
+    const N = visibleKeys.length;
+    const step = (N > 0) ? (2 * Math.PI) / N : 0;
 
+    visibleKeys.forEach((key, idx) => {
+      const upg = shopData[key];
       const cost = Values.getUpgradeCost(key, currentShop);
       const canAfford = currentFunds >= cost;
 
@@ -622,21 +896,26 @@
       cardEl.setAttribute('title', `Buy ${upg.name || key}`);
 
       cardEl.innerHTML = `
-        <img class="card-img" src="${upg.image || ''}" alt="${upg.name || key}" draggable="false" />
-        <div class="card-top-bar">
-          <div class="card-top-header">
-            <span class="card-lvl-badge" id="card-lvl-${key}">${upg.isUnlock ? (upg.level >= 1 ? 'UNLOCKED' : 'LOCKED') : (upg.maxLevel ? `LVL ${upg.level}/${upg.maxLevel}` : `LVL ${upg.level}`)}</span>
-            <span class="card-effect-desc" id="card-effect-${key}">${upg.getEffect ? upg.getEffect(upg) : ''}</span>
+        <div class="card-inner">
+          <img class="card-img" src="${upg.image || ''}" alt="${upg.name || key}" draggable="false" />
+          <div class="card-top-bar">
+            <div class="card-top-header">
+              <span class="card-lvl-badge" id="card-lvl-${key}">${upg.isUnlock ? (upg.level >= 1 ? 'UNLOCKED' : 'LOCKED') : (upg.maxLevel ? `LVL ${upg.level}/${upg.maxLevel}` : `LVL ${upg.level}`)}</span>
+              <span class="card-effect-desc" id="card-effect-${key}">${upg.getEffect ? upg.getEffect(upg) : ''}</span>
+            </div>
+            <div class="card-effect-row">
+              <span class="card-stat-label">Actual:</span>
+              <span class="card-stat-val" id="card-stat-${key}">${upg.getStat ? upg.getStat(upg) : ''}</span>
+            </div>
           </div>
-          <div class="card-effect-row">
-            <span class="card-stat-label">Actual:</span>
-            <span class="card-stat-val" id="card-stat-${key}">${upg.getStat ? upg.getStat(upg) : ''}</span>
+          <div class="card-price-overlay">
+            <span class="card-price-val" id="card-cost-${key}">${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g</span>
           </div>
-        </div>
-        <div class="card-price-overlay">
-          <span class="card-price-val" id="card-cost-${key}">${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g</span>
         </div>
       `;
+
+      const cardInner = cardEl.querySelector('.card-inner');
+      const baseAngle = idx * step;
 
       // Prevent bot from moving when interacting with upgrade cards
       cardEl.addEventListener('pointerdown', (e) => {
@@ -648,42 +927,55 @@
         isLeftMouseDown = false;
       });
 
-      // Interactive 3D tilt & follow mouse on hover
-      cardEl.addEventListener('pointerenter', () => {
-        cardEl.style.transition = 'transform 0.08s ease-out, filter 0.15s ease-out';
-      });
-
+      // Interactive 3D tilt & follow mouse on hover ONLY on the middle card
       cardEl.addEventListener('pointermove', (e) => {
+        if (!cardEl.classList.contains('is-middle-card')) return;
         const rect = cardEl.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
 
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const percentX = ((x / rect.width) - 0.5) * 2; // -1 (left) to 1 (right)
-        const percentY = ((y / rect.height) - 0.5) * 2; // -1 (top) to 1 (bottom)
+        const percentX = ((x / rect.width) - 0.5) * 2;
+        const percentY = ((y / rect.height) - 0.5) * 2;
 
-        // Rotate towards mouse (up to 12 degrees)
-        const rotX = (percentY * 12).toFixed(2);
-        const rotY = (-percentX * 12).toFixed(2);
+        const rotX = (percentY * 10).toFixed(2);
+        const rotY = (-percentX * 10).toFixed(2);
+        const moveX = (percentX * 6).toFixed(2);
+        const moveY = (percentY * 6 - 8).toFixed(2);
 
-        // Move towards mouse (up to 8px) + base hover lift (-10px)
-        const moveX = (percentX * 8).toFixed(2);
-        const moveY = (percentY * 8 - 10).toFixed(2);
-
-        cardEl.style.transform = `perspective(700px) translate3d(${moveX}px, ${moveY}px, 0) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(1.05)`;
-        cardEl.style.filter = `drop-shadow(${-percentX * 10}px ${16 - percentY * 6}px 24px rgba(0, 0, 0, 0.75))`;
+        cardInner.style.transform = `perspective(700px) translate3d(${moveX}px, ${moveY}px, 0) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(1.05)`;
+        cardInner.style.filter = `drop-shadow(${-percentX * 10}px ${16 - percentY * 6}px 24px rgba(0, 0, 0, 0.75))`;
       });
 
       cardEl.addEventListener('pointerleave', () => {
-        cardEl.style.transition = 'transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2), filter 0.35s ease';
-        cardEl.style.transform = '';
-        cardEl.style.filter = '';
+        cardInner.style.transform = '';
+        cardInner.style.filter = '';
       });
 
+      // Click card: if already in the middle, buy upgrade; if not in middle, rotate to middle!
       cardEl.addEventListener('click', (e) => {
         e.stopPropagation();
         isLeftMouseDown = false;
-        buyUpgrade(key, currentShop);
+        if (carouselHasDragged) return;
+        dismissCarouselHint();
+
+        if (N <= 1) {
+          buyUpgrade(key, currentShop);
+          return;
+        }
+
+        let relAngle = baseAngle - carouselAngle;
+        relAngle = ((relAngle + Math.PI) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI) - Math.PI;
+
+        if (Math.abs(relAngle) < 0.22) {
+          buyUpgrade(key, currentShop);
+        } else {
+          carouselTargetAngle = carouselAngle + relAngle;
+          startCarouselAnimation();
+          if (window.soundEngine && window.soundEngine.playPickContentSound) {
+            window.soundEngine.playPickContentSound();
+          }
+        }
       });
 
       cardEl.addEventListener('keydown', (e) => {
@@ -695,8 +987,27 @@
         }
       });
 
-      shopCardsTray.appendChild(cardEl);
+      viewport.appendChild(cardEl);
+      carouselCards.push({ el: cardEl, inner: cardInner, key, index: idx, baseAngle });
     });
+
+    // Preserve previously active upgrade card snap position
+    let targetIdx = 0;
+    if (prevActiveKey) {
+      const foundIdx = carouselCards.findIndex(c => c.key === prevActiveKey);
+      if (foundIdx !== -1) targetIdx = foundIdx;
+    }
+
+    if (N > 0) {
+      carouselTargetAngle = targetIdx * step;
+      carouselAngle = carouselTargetAngle;
+    } else {
+      carouselTargetAngle = 0;
+      carouselAngle = 0;
+    }
+
+    initCarouselEvents();
+    updateCarouselPositions();
   }
 
   function buyUpgrade(key, shopKey) {
@@ -755,15 +1066,17 @@
 
       const updatedCardEl = document.getElementById(`card-${key}`);
       if (updatedCardEl) {
-        updatedCardEl.classList.remove('purchased-anim', 'shake-anim');
-        void updatedCardEl.offsetWidth; // trigger reflow
-        updatedCardEl.classList.add('purchased-anim');
+        const inner = updatedCardEl.querySelector('.card-inner') || updatedCardEl;
+        inner.classList.remove('purchased-anim', 'shake-anim');
+        void inner.offsetWidth; // trigger reflow
+        inner.classList.add('purchased-anim');
       }
     } else {
       if (cardEl) {
-        cardEl.classList.remove('purchased-anim', 'shake-anim');
-        void cardEl.offsetWidth;
-        cardEl.classList.add('shake-anim');
+        const inner = cardEl.querySelector('.card-inner') || cardEl;
+        inner.classList.remove('purchased-anim', 'shake-anim');
+        void inner.offsetWidth;
+        inner.classList.add('shake-anim');
       }
     }
   }
@@ -956,11 +1269,19 @@
     if (shopKey === 'dirtShop' && !isDirtUnlocked()) {
       return; // Cannot open Dirt Shop until Dirt is unlocked!
     }
+    const prevShop = currentShop;
     if (shopKey) currentShop = shopKey;
     isShopOpen = true;
     document.body.classList.add('shop-open');
+    document.body.classList.toggle('dirt-shop-active', currentShop === 'dirtShop');
+    document.body.classList.toggle('dust-shop-active', currentShop === 'dustShop');
     if (shopCardsTray) {
       shopCardsTray.classList.remove('hidden');
+    }
+    if (prevShop !== currentShop) {
+      carouselAngle = 0;
+      carouselTargetAngle = 0;
+      carouselActiveIndex = 0;
     }
     updateDirtShopVisibility();
     initShopUI();
@@ -970,9 +1291,13 @@
   function closeShop() {
     if (!isShopOpen) return;
     isShopOpen = false;
-    document.body.classList.remove('shop-open');
+    document.body.classList.remove('shop-open', 'dirt-shop-active', 'dust-shop-active');
     if (shopCardsTray) {
       shopCardsTray.classList.add('hidden');
+    }
+    if (carouselRafId) {
+      cancelAnimationFrame(carouselRafId);
+      carouselRafId = null;
     }
     updateDirtShopVisibility();
     updateUpgradesAndShopUI();
@@ -2649,6 +2974,8 @@
         clampCleanerToPlayfield(bot, bot.radius);
       }
     }
+
+    updateCarouselPositions();
   }
 
   // --- Local Save & Load System ---
@@ -3364,6 +3691,24 @@
   // Key Controls:
   // "you should keep pressing space to store"
   window.addEventListener('keydown', (e) => {
+    if (isShopOpen) {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        rotateCarouselByStep(-1);
+        return;
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        rotateCarouselByStep(1);
+        return;
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (carouselCards[carouselActiveIndex]) {
+          buyUpgrade(carouselCards[carouselActiveIndex].key, currentShop);
+        }
+        return;
+      }
+    }
+
     if (e.code === 'Space' || e.key === ' ') {
       e.preventDefault();
       if (!isSpaceHeld) {

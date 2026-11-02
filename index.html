@@ -88,7 +88,24 @@
   </nav>
 
   <!-- Upgrades Card System Tray (appears at bottom of screen when shop is opened) -->
-  <div id="shop-cards-tray" class="shop-cards-tray hidden" role="region" aria-label="Shop Upgrades"></div>
+  <div id="shop-cards-tray" class="shop-cards-tray hidden" role="region" aria-label="Shop Upgrades">
+    <!-- Center Vacuum 1/2 Circle Hub -->
+    <div class="vacuum-hub-container" id="vacuum-hub-container">
+      <div class="vacuum-hub-glow"></div>
+      <div class="vacuum-hub-circle" id="vacuum-hub-circle">
+        <img src="Assets/Icons/B.O.B. Top.png" class="vacuum-hub-img" id="vacuum-hub-img" alt="B.O.B." draggable="false">
+      </div>
+      <div class="vacuum-hub-rim"></div>
+      <div class="vacuum-hub-notch"></div>
+    </div>
+
+    <button class="carousel-nav-btn carousel-prev-btn" id="carousel-prev-btn" title="Previous Upgrade (Left Arrow)" aria-label="Previous Upgrade">‹</button>
+    <div class="carousel-cards-viewport" id="carousel-cards-viewport"></div>
+    <button class="carousel-nav-btn carousel-next-btn" id="carousel-next-btn" title="Next Upgrade (Right Arrow)" aria-label="Next Upgrade">›</button>
+    <div class="carousel-scroll-hint" id="carousel-scroll-hint">
+      <span>Scroll or Drag to Rotate</span>
+    </div>
+  </div>
 
   <!-- Instruction Hint -->
   <div id="hint-overlay" class="hint-overlay">
