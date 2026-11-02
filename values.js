@@ -35,7 +35,7 @@ var Values = {
   // Automatic Vacuum Robot Configuration
   autoVacuum: {
     cleanRate: 0.1,    // Rate of cleaning distributed across pixels under vacuum (g/s)
-    capacity: 1.0,     // Base vacuum canister capacity (g)
+    capacity: 5.0,     // Base vacuum canister capacity (g)
     stored: 0,         // Current total mass in canister (dust + dirt)
     storedDust: 0,     // Current dust mass in canister (g)
     storedDirt: 0,     // Current dirt mass in canister (g)
