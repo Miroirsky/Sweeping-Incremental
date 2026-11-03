@@ -50,6 +50,7 @@
   const carouselScrollHint = document.getElementById('carousel-scroll-hint');
   const vacuumHubContainer = document.getElementById('vacuum-hub-container');
   const vacuumTopSprite = document.getElementById('vacuum-hub-img');
+  const vacuumHubNotch = document.querySelector('.vacuum-hub-notch');
   let currentShop = 'dustShop';
 
   // Default Vacuum Bot Images (B.O.B. Bottom & Top)
@@ -599,38 +600,47 @@
 
   // --- Circular Upgrades Carousel State & Engine ---
   let carouselAngle = 0;       // Current animated angle (radians)
-  let carouselTargetAngle = 0; // Target snapped angle (radians)
+  let carouselTargetAngle = 0; // Target active card angle (radians)
   let carouselCards = [];      // [{ el, inner, key, index, baseAngle }]
   let carouselActiveIndex = 0;
   let carouselIsDragging = false;
   let carouselDragStartX = 0;
-  let carouselDragStartAngle = 0;
+  let carouselDragStartIndex = 0;
   let carouselHasDragged = false;
   let carouselLastDragX = 0;
   let carouselLastDragTime = 0;
-  let carouselDragVelocity = 0;
-  let carouselWheelSnapTimer = null;
+  let carouselLastWheelTime = 0;
   let carouselRafId = null;
   let carouselHasInteracted = false;
   let carouselEventsInitialized = false;
 
-  function getCarouselRadii() {
+  function getCarouselRadii(cardCount = 6) {
     const w = window.innerWidth;
     const h = window.innerHeight;
     const cx = w * 0.5;
     const cy = h; // Center of vacuum circle at bottom edge of screen
 
     // Radius of vacuum circle (1/2 circle sticking out from bottom)
-    const hubRadius = Math.min(w * 0.17, Math.max(130, h * 0.22));
+    const hubRadius = Math.min(w * 0.16, Math.max(120, h * 0.20));
 
-    // Card dimensions
-    const cardWidth = Math.min(w * 0.13, Math.max(76, h * 0.19));
+    // Responsive card dimensions scaled according to number of visible cards
+    const countFactor = cardCount > 4 ? (4.2 / cardCount) : 1.0;
+    const cardWidth = Math.max(66, Math.min(125, w * 0.11 * countFactor, h * 0.16 * countFactor));
     const cardHeight = cardWidth * 1.5;
 
     // Radius from center of hub to center of each card
     const cardRadius = hubRadius + cardHeight * 0.5 + 16;
 
     return { cx, cy, hubRadius, cardRadius, cardWidth, cardHeight };
+  }
+
+  function getCardSlotAngle(idx, totalCards) {
+    if (totalCards <= 1) return 0;
+    // Spread evenly across the upper visible arc (approx -56 deg to +56 deg for 6 cards)
+    const maxSpreadDeg = Math.min(56, 18 + (totalCards - 2) * 9.5);
+    const maxSpreadRad = maxSpreadDeg * (Math.PI / 180);
+    const t = idx / (totalCards - 1); // 0 to 1
+    return -maxSpreadRad + t * (2 * maxSpreadRad);
   }
 
   function dismissCarouselHint() {
@@ -644,7 +654,7 @@
     if (!viewport || carouselCards.length === 0) return;
 
     const N = carouselCards.length;
-    const { cx, cy, hubRadius, cardRadius } = getCarouselRadii();
+    const { cx, cy, hubRadius, cardRadius } = getCarouselRadii(N);
 
     // Update vacuum hub circle size
     if (vacuumHubContainer) {
@@ -653,65 +663,47 @@
       vacuumHubContainer.style.height = `${d}px`;
     }
 
-    // Orientate vacuum top image toward the first card (Card 0)
+    // Orientate vacuum top image and notch toward the active animated angle
     if (vacuumTopSprite) {
-      let card0RelAngle = (0 - carouselAngle);
-      card0RelAngle = ((card0RelAngle + Math.PI) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI) - Math.PI;
       // In B.O.B. Top.png, 180deg points forward/up towards 12 o'clock
-      const bobRotationDeg = 180 + (card0RelAngle * 180 / Math.PI);
+      const bobRotationDeg = 180 + (carouselAngle * 180 / Math.PI);
       vacuumTopSprite.style.transform = `rotate(${bobRotationDeg.toFixed(2)}deg)`;
     }
 
-    let closestDist = Infinity;
-    let newActiveIndex = 0;
+    if (vacuumHubNotch) {
+      const notchRotDeg = carouselAngle * (180 / Math.PI);
+      vacuumHubNotch.style.transform = `translate(-50%, -50%) rotate(${notchRotDeg.toFixed(1)}deg) translateY(-${(hubRadius - 2).toFixed(1)}px)`;
+    }
 
     carouselCards.forEach((item, idx) => {
-      // Relative angle from top (12 o'clock): baseAngle - carouselAngle
-      let relAngle = item.baseAngle - carouselAngle;
-      relAngle = ((relAngle + Math.PI) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI) - Math.PI;
+      const baseAngle = item.baseAngle;
+      const isMiddle = (idx === carouselActiveIndex);
 
-      const absDist = Math.abs(relAngle);
-      if (absDist < closestDist) {
-        closestDist = absDist;
-        newActiveIndex = idx;
-      }
+      // Active card gets elevated slightly along its normal for prominent pop
+      const radialDist = cardRadius + (isMiddle ? 10 : 0);
+      const x = cx + Math.sin(baseAngle) * radialDist;
+      const y = cy - Math.cos(baseAngle) * radialDist;
+      const rotDeg = baseAngle * (180 / Math.PI);
 
-      // Radial 2D positioning around the 1/2 circle:
-      // When relAngle = 0 (top/middle): x = cx, y = cy - cardRadius, rotDeg = 0
-      // When relAngle > 0: moves right, rotates clockwise
-      // When relAngle < 0: moves left, rotates counter-clockwise
-      const x = cx + Math.sin(relAngle) * cardRadius;
-      const y = cy - Math.cos(relAngle) * cardRadius;
-      const rotDeg = relAngle * (180 / Math.PI);
-
-      const isMiddle = (idx === newActiveIndex && absDist < 0.22);
-      const scale = isMiddle ? 1.10 : Math.max(0.75, 1.0 - absDist * 0.15);
-
-      // Fade out as cards rotate below the bottom horizon
-      let opacity = 1.0;
-      if (absDist > Math.PI * 0.44) {
-        opacity = Math.max(0, 1.0 - (absDist - Math.PI * 0.44) / (Math.PI * 0.24));
-      }
-
-      const zIndex = isMiddle ? 100 : Math.max(1, Math.round(50 - absDist * 25));
+      const scale = isMiddle ? 1.15 : 0.92;
+      const zIndex = isMiddle ? 100 : Math.max(1, 50 - Math.abs(idx - carouselActiveIndex) * 5);
 
       item.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%) rotate(${rotDeg.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
-      item.el.style.opacity = opacity.toFixed(2);
+      // All cards are displayed at the upper visible part of the round at the same time
+      item.el.style.opacity = '1.0';
       item.el.style.zIndex = zIndex;
 
       item.el.classList.toggle('is-middle-card', isMiddle);
       item.el.setAttribute('aria-selected', isMiddle ? 'true' : 'false');
     });
-
-    carouselActiveIndex = newActiveIndex;
   }
 
   function startCarouselAnimation() {
     if (carouselRafId) return;
     function animLoop() {
       const diff = carouselTargetAngle - carouselAngle;
-      if (Math.abs(diff) > 0.0003) {
-        carouselAngle += diff * 0.16; // Smooth organic spring ease
+      if (Math.abs(diff) > 0.001) {
+        carouselAngle += diff * 0.20; // Smooth organic spring ease
         updateCarouselPositions();
         carouselRafId = requestAnimationFrame(animLoop);
       } else {
@@ -723,24 +715,42 @@
     carouselRafId = requestAnimationFrame(animLoop);
   }
 
+  function setActiveCardIndex(newIdx, skipSound = false) {
+    const N = carouselCards.length;
+    if (N === 0) return;
+    const clampedIdx = Math.max(0, Math.min(N - 1, newIdx));
+    carouselActiveIndex = clampedIdx;
+
+    if (carouselCards[carouselActiveIndex]) {
+      carouselTargetAngle = carouselCards[carouselActiveIndex].baseAngle;
+      startCarouselAnimation();
+    }
+    if (!skipSound && window.soundEngine && window.soundEngine.playPickContentSound) {
+      window.soundEngine.playPickContentSound();
+    }
+  }
+
   function rotateCarouselByStep(direction) {
     if (!isShopOpen || carouselCards.length <= 1) return;
     dismissCarouselHint();
     const N = carouselCards.length;
-    const step = (2 * Math.PI) / N;
-    const snapIdx = Math.round(carouselTargetAngle / step) + direction;
-    carouselTargetAngle = snapIdx * step;
-    startCarouselAnimation();
-    if (window.soundEngine && window.soundEngine.playPickContentSound) {
-      window.soundEngine.playPickContentSound();
+    let nextIdx = carouselActiveIndex + direction;
+
+    // Corner wrapping: when hitting a corner (no more card on right/left), return to opposite!
+    if (nextIdx >= N) {
+      nextIdx = 0; // Hit right corner -> return to opposite (first card on left)
+    } else if (nextIdx < 0) {
+      nextIdx = N - 1; // Hit left corner -> return to opposite (last card on right)
     }
+
+    setActiveCardIndex(nextIdx);
   }
 
   function initCarouselEvents() {
     if (carouselEventsInitialized || !shopCardsTray) return;
     carouselEventsInitialized = true;
 
-    // Mouse Wheel Scroll (horizontal or vertical wheel turns the circle)
+    // Mouse Wheel Scroll: down/right goes next, up/left goes prev, wraps at corners
     shopCardsTray.addEventListener('wheel', (e) => {
       if (!isShopOpen || carouselCards.length <= 1) return;
       e.preventDefault();
@@ -749,24 +759,17 @@
       dismissCarouselHint();
 
       const delta = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
-      const N = carouselCards.length;
-      const step = (2 * Math.PI) / N;
+      if (Math.abs(delta) < 4) return;
 
-      carouselTargetAngle += (delta > 0 ? 1 : -1) * (step * 0.45);
-      startCarouselAnimation();
+      const now = performance.now();
+      if (now - carouselLastWheelTime < 130) return;
+      carouselLastWheelTime = now;
 
-      clearTimeout(carouselWheelSnapTimer);
-      carouselWheelSnapTimer = setTimeout(() => {
-        const snapIdx = Math.round(carouselTargetAngle / step);
-        carouselTargetAngle = snapIdx * step;
-        startCarouselAnimation();
-        if (window.soundEngine && window.soundEngine.playPickContentSound) {
-          window.soundEngine.playPickContentSound();
-        }
-      }, 110);
+      const dir = delta > 0 ? 1 : -1;
+      rotateCarouselByStep(dir);
     }, { passive: false });
 
-    // Pointer / Mouse Drag to rotate circle
+    // Pointer / Mouse Drag across shop tray
     shopCardsTray.addEventListener('pointerdown', (e) => {
       if (!isShopOpen || carouselCards.length <= 1) return;
       if (e.target && e.target.closest('.carousel-nav-btn')) return;
@@ -774,10 +777,9 @@
       carouselIsDragging = true;
       carouselHasDragged = false;
       carouselDragStartX = e.clientX;
-      carouselDragStartAngle = carouselTargetAngle;
+      carouselDragStartIndex = carouselActiveIndex;
       carouselLastDragX = e.clientX;
       carouselLastDragTime = performance.now();
-      carouselDragVelocity = 0;
       dismissCarouselHint();
 
       try { shopCardsTray.setPointerCapture?.(e.pointerId); } catch(err) {}
@@ -786,22 +788,22 @@
     shopCardsTray.addEventListener('pointermove', (e) => {
       if (!carouselIsDragging) return;
       const dx = e.clientX - carouselDragStartX;
-      if (Math.abs(dx) > 5) {
+      if (Math.abs(dx) > 6) {
         carouselHasDragged = true;
       }
 
-      const { cardRadius } = getCarouselRadii();
-      const angleDelta = -(dx / cardRadius) * 1.5;
-      carouselTargetAngle = carouselDragStartAngle + angleDelta;
-      carouselAngle = carouselTargetAngle;
-      updateCarouselPositions();
+      const N = carouselCards.length;
+      if (N <= 1) return;
 
-      const now = performance.now();
-      const dt = now - carouselLastDragTime;
-      if (dt > 10) {
-        carouselDragVelocity = (e.clientX - carouselLastDragX) / dt;
-        carouselLastDragX = e.clientX;
-        carouselLastDragTime = now;
+      // Every ~45px of drag steps to the adjacent card
+      const stepDistance = 45;
+      const stepsMoved = Math.trunc(dx / stepDistance);
+      let targetIdx = carouselDragStartIndex + stepsMoved;
+      // Handle corner wrapping
+      targetIdx = ((targetIdx % N) + N) % N;
+
+      if (targetIdx !== carouselActiveIndex) {
+        setActiveCardIndex(targetIdx);
       }
     });
 
@@ -809,25 +811,6 @@
       if (!carouselIsDragging) return;
       carouselIsDragging = false;
       try { shopCardsTray.releasePointerCapture?.(e.pointerId); } catch(err) {}
-
-      const N = carouselCards.length;
-      if (N <= 1) return;
-      const step = (2 * Math.PI) / N;
-      const { cardRadius } = getCarouselRadii();
-
-      // Fling momentum on flick
-      if (Math.abs(carouselDragVelocity) > 0.25) {
-        const momentumAngle = -(carouselDragVelocity * 140 / cardRadius);
-        carouselTargetAngle += momentumAngle;
-      }
-
-      // Middle Card Snap: Snap to nearest card directly in the center
-      const snapIdx = Math.round(carouselTargetAngle / step);
-      carouselTargetAngle = snapIdx * step;
-      startCarouselAnimation();
-      if (window.soundEngine && window.soundEngine.playPickContentSound) {
-        window.soundEngine.playPickContentSound();
-      }
     };
 
     shopCardsTray.addEventListener('pointerup', endDrag);
@@ -879,7 +862,6 @@
     });
 
     const N = visibleKeys.length;
-    const step = (N > 0) ? (2 * Math.PI) / N : 0;
 
     visibleKeys.forEach((key, idx) => {
       const upg = shopData[key];
@@ -915,7 +897,7 @@
       `;
 
       const cardInner = cardEl.querySelector('.card-inner');
-      const baseAngle = idx * step;
+      const baseAngle = getCardSlotAngle(idx, N);
 
       // Prevent bot from moving when interacting with upgrade cards
       cardEl.addEventListener('pointerdown', (e) => {
@@ -952,29 +934,17 @@
         cardInner.style.filter = '';
       });
 
-      // Click card: if already in the middle, buy upgrade; if not in middle, rotate to middle!
+      // Click card: if already selected, buy upgrade; if not, select it!
       cardEl.addEventListener('click', (e) => {
         e.stopPropagation();
         isLeftMouseDown = false;
         if (carouselHasDragged) return;
         dismissCarouselHint();
 
-        if (N <= 1) {
-          buyUpgrade(key, currentShop);
-          return;
-        }
-
-        let relAngle = baseAngle - carouselAngle;
-        relAngle = ((relAngle + Math.PI) % (2 * Math.PI) + (2 * Math.PI)) % (2 * Math.PI) - Math.PI;
-
-        if (Math.abs(relAngle) < 0.22) {
+        if (idx === carouselActiveIndex) {
           buyUpgrade(key, currentShop);
         } else {
-          carouselTargetAngle = carouselAngle + relAngle;
-          startCarouselAnimation();
-          if (window.soundEngine && window.soundEngine.playPickContentSound) {
-            window.soundEngine.playPickContentSound();
-          }
+          setActiveCardIndex(idx);
         }
       });
 
@@ -991,17 +961,22 @@
       carouselCards.push({ el: cardEl, inner: cardInner, key, index: idx, baseAngle });
     });
 
-    // Preserve previously active upgrade card snap position
+    // Preserve previously active upgrade card snap position if valid
     let targetIdx = 0;
     if (prevActiveKey) {
       const foundIdx = carouselCards.findIndex(c => c.key === prevActiveKey);
       if (foundIdx !== -1) targetIdx = foundIdx;
+    } else {
+      // Default to middle card (e.g. 1 out of 3, 2 out of 5) or 0
+      targetIdx = Math.floor(N / 2);
     }
 
     if (N > 0) {
-      carouselTargetAngle = targetIdx * step;
+      carouselActiveIndex = targetIdx;
+      carouselTargetAngle = carouselCards[carouselActiveIndex].baseAngle;
       carouselAngle = carouselTargetAngle;
     } else {
+      carouselActiveIndex = 0;
       carouselTargetAngle = 0;
       carouselAngle = 0;
     }
