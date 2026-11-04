@@ -599,22 +599,47 @@
   }
 
   // --- Circular Upgrades Carousel State & Engine ---
-  let carouselAngle = 0;       // Current animated angle (radians)
-  let carouselTargetAngle = 0; // Target active card angle (radians)
-  let carouselCards = [];      // [{ el, inner, key, index, baseAngle }]
-  let carouselActiveIndex = 0;
+  let carouselAngle = 0;           // Continuous rotation angle around hub (radians)
+  let carouselAngleVelocity = 0;   // Velocity of rotation (radians/frame)
+  let carouselTargetAngle = 0;     // Target angle when rotating card to center
+  let isCenteringCard = false;     // True when animating to center a card
+  let carouselCards = [];          // [{ el, inner, lvlEl, effectEl, statEl, costEl, key, slotIndex, slotAngle }]
+  let carouselVisibleKeys = [];    // Visible upgrade keys in active shop
+  let carouselStepAngle = Math.PI / 6; // Angular distance between adjacent card slots
+  let lastClosestCard = null;      // Last centered card item (for click sound on switch)
   let carouselIsDragging = false;
   let carouselDragStartX = 0;
-  let carouselDragStartIndex = 0;
-  let carouselHasDragged = false;
   let carouselLastDragX = 0;
   let carouselLastDragTime = 0;
-  let carouselLastWheelTime = 0;
+  let carouselHasDragged = false;
   let carouselRafId = null;
   let carouselHasInteracted = false;
   let carouselEventsInitialized = false;
 
-  function getCarouselRadii(cardCount = 6) {
+  function normalizeAngle(rad) {
+    let a = rad % (2 * Math.PI);
+    if (a > Math.PI) a -= 2 * Math.PI;
+    if (a < -Math.PI) a += 2 * Math.PI;
+    return a;
+  }
+
+  function getClosestCardToCenter() {
+    if (carouselCards.length === 0) return null;
+    let closest = null;
+    let minAbs = Infinity;
+    for (let i = 0; i < carouselCards.length; i++) {
+      const item = carouselCards[i];
+      const norm = normalizeAngle(item.slotAngle + carouselAngle);
+      const abs = Math.abs(norm);
+      if (abs < minAbs) {
+        minAbs = abs;
+        closest = item;
+      }
+    }
+    return closest;
+  }
+
+  function getCarouselRadii() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     const cx = w * 0.5;
@@ -623,24 +648,14 @@
     // Radius of vacuum circle (1/2 circle sticking out from bottom)
     const hubRadius = Math.min(w * 0.16, Math.max(120, h * 0.20));
 
-    // Responsive card dimensions scaled according to number of visible cards
-    const countFactor = cardCount > 4 ? (4.2 / cardCount) : 1.0;
-    const cardWidth = Math.max(66, Math.min(125, w * 0.11 * countFactor, h * 0.16 * countFactor));
+    // Base card dimensions
+    const cardWidth = Math.max(68, Math.min(115, w * 0.09, h * 0.13));
     const cardHeight = cardWidth * 1.5;
 
-    // Radius from center of hub to center of each card
-    const cardRadius = hubRadius + cardHeight * 0.5 + 16;
+    // Radius from center of hub to center of cards
+    const cardRadius = hubRadius + cardHeight * 0.52 + 12;
 
     return { cx, cy, hubRadius, cardRadius, cardWidth, cardHeight };
-  }
-
-  function getCardSlotAngle(idx, totalCards) {
-    if (totalCards <= 1) return 0;
-    // Spread evenly across the upper visible arc (approx -56 deg to +56 deg for 6 cards)
-    const maxSpreadDeg = Math.min(56, 18 + (totalCards - 2) * 9.5);
-    const maxSpreadRad = maxSpreadDeg * (Math.PI / 180);
-    const t = idx / (totalCards - 1); // 0 to 1
-    return -maxSpreadRad + t * (2 * maxSpreadRad);
   }
 
   function dismissCarouselHint() {
@@ -653,8 +668,7 @@
     const viewport = carouselCardsViewport || shopCardsTray;
     if (!viewport || carouselCards.length === 0) return;
 
-    const N = carouselCards.length;
-    const { cx, cy, hubRadius, cardRadius } = getCarouselRadii(N);
+    const { cx, cy, hubRadius, cardRadius } = getCarouselRadii();
 
     // Update vacuum hub circle size
     if (vacuumHubContainer) {
@@ -663,34 +677,59 @@
       vacuumHubContainer.style.height = `${d}px`;
     }
 
-    // Orientate vacuum top image and notch toward the active animated angle
+    // Robot sprite in vacuum circle rotates with carouselAngle
     if (vacuumTopSprite) {
-      // In B.O.B. Top.png, 180deg points forward/up towards 12 o'clock
       const bobRotationDeg = 180 + (carouselAngle * 180 / Math.PI);
       vacuumTopSprite.style.transform = `rotate(${bobRotationDeg.toFixed(2)}deg)`;
     }
 
+    // Notch fixed at 12 o'clock center selection position
     if (vacuumHubNotch) {
-      const notchRotDeg = carouselAngle * (180 / Math.PI);
-      vacuumHubNotch.style.transform = `translate(-50%, -50%) rotate(${notchRotDeg.toFixed(1)}deg) translateY(-${(hubRadius - 2).toFixed(1)}px)`;
+      vacuumHubNotch.style.transform = `translate(-50%, -50%) translateY(-${(hubRadius - 2).toFixed(1)}px)`;
     }
 
-    carouselCards.forEach((item, idx) => {
-      const baseAngle = item.baseAngle;
-      const isMiddle = (idx === carouselActiveIndex);
+    const closest = getClosestCardToCenter();
 
-      // Active card gets elevated slightly along its normal for prominent pop
-      const radialDist = cardRadius + (isMiddle ? 10 : 0);
-      const x = cx + Math.sin(baseAngle) * radialDist;
-      const y = cy - Math.cos(baseAngle) * radialDist;
-      const rotDeg = baseAngle * (180 / Math.PI);
+    // Audio tick when active card changes
+    if (closest && closest !== lastClosestCard) {
+      if (lastClosestCard && window.soundEngine && window.soundEngine.playPickContentSound) {
+        window.soundEngine.playPickContentSound();
+      }
+      lastClosestCard = closest;
+    }
 
-      const scale = isMiddle ? 1.15 : 0.92;
-      const zIndex = isMiddle ? 100 : Math.max(1, 50 - Math.abs(idx - carouselActiveIndex) * 5);
+    const minScale = 0.70;
+    const maxScale = 1.25;
 
-      item.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%) rotate(${rotDeg.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
-      // All cards are displayed at the upper visible part of the round at the same time
-      item.el.style.opacity = '1.0';
+    carouselCards.forEach((item) => {
+      const normAngle = normalizeAngle(item.slotAngle + carouselAngle);
+      const absAngle = Math.abs(normAngle);
+
+      // Hide cards that are below the horizontal horizon
+      if (absAngle >= Math.PI * 0.50) {
+        item.el.style.display = 'none';
+        item.el.style.pointerEvents = 'none';
+        return;
+      }
+
+      item.el.style.display = '';
+      item.el.style.pointerEvents = 'auto';
+
+      const cosVal = Math.cos(normAngle); // 0 at 90deg, 1 at center
+      const centerFactor = Math.pow(Math.max(0, cosVal), 1.6);
+      const scale = minScale + (maxScale - minScale) * centerFactor;
+
+      const isMiddle = (item === closest);
+      const radialDist = cardRadius + centerFactor * 16;
+      const x = cx + Math.sin(normAngle) * radialDist;
+      const y = cy - Math.cos(normAngle) * radialDist;
+      const rotDeg = normAngle * (180 / Math.PI);
+
+      const zIndex = isMiddle ? 100 : Math.round(20 + centerFactor * 70);
+      const opacity = 0.45 + 0.55 * centerFactor;
+
+      item.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%) rotate(${rotDeg.toFixed(2)}deg) scale(${scale.toFixed(3)})`;
+      item.el.style.opacity = opacity.toFixed(2);
       item.el.style.zIndex = zIndex;
 
       item.el.classList.toggle('is-middle-card', isMiddle);
@@ -698,59 +737,69 @@
     });
   }
 
-  function startCarouselAnimation() {
+  function startCarouselLoop() {
     if (carouselRafId) return;
     function animLoop() {
-      const diff = carouselTargetAngle - carouselAngle;
-      if (Math.abs(diff) > 0.001) {
-        carouselAngle += diff * 0.20; // Smooth organic spring ease
+      let keepRunning = false;
+
+      if (isCenteringCard) {
+        const diff = carouselTargetAngle - carouselAngle;
+        if (Math.abs(diff) > 0.0006) {
+          carouselAngle += diff * 0.18;
+          keepRunning = true;
+        } else {
+          carouselAngle = carouselTargetAngle;
+          isCenteringCard = false;
+        }
         updateCarouselPositions();
+      } else {
+        if (Math.abs(carouselAngleVelocity) > 0.00008) {
+          carouselAngle += carouselAngleVelocity;
+          carouselAngleVelocity *= 0.88; // friction damping
+          keepRunning = true;
+          updateCarouselPositions();
+        } else {
+          carouselAngleVelocity = 0;
+        }
+      }
+
+      if (keepRunning) {
         carouselRafId = requestAnimationFrame(animLoop);
       } else {
-        carouselAngle = carouselTargetAngle;
-        updateCarouselPositions();
         carouselRafId = null;
+        carouselAngle = carouselAngle % (2 * Math.PI);
+        if (carouselAngle < 0) carouselAngle += 2 * Math.PI;
+        updateCarouselPositions();
       }
     }
     carouselRafId = requestAnimationFrame(animLoop);
   }
 
-  function setActiveCardIndex(newIdx, skipSound = false) {
-    const N = carouselCards.length;
-    if (N === 0) return;
-    const clampedIdx = Math.max(0, Math.min(N - 1, newIdx));
-    carouselActiveIndex = clampedIdx;
-
-    if (carouselCards[carouselActiveIndex]) {
-      carouselTargetAngle = carouselCards[carouselActiveIndex].baseAngle;
-      startCarouselAnimation();
-    }
-    if (!skipSound && window.soundEngine && window.soundEngine.playPickContentSound) {
-      window.soundEngine.playPickContentSound();
-    }
+  function rotateCardToCenter(item) {
+    if (!item) return;
+    dismissCarouselHint();
+    const normAngle = normalizeAngle(item.slotAngle + carouselAngle);
+    carouselTargetAngle = carouselAngle - normAngle;
+    isCenteringCard = true;
+    carouselAngleVelocity = 0;
+    startCarouselLoop();
   }
 
   function rotateCarouselByStep(direction) {
     if (!isShopOpen || carouselCards.length <= 1) return;
     dismissCarouselHint();
-    const N = carouselCards.length;
-    let nextIdx = carouselActiveIndex + direction;
-
-    // Corner wrapping: when hitting a corner (no more card on right/left), return to opposite!
-    if (nextIdx >= N) {
-      nextIdx = 0; // Hit right corner -> return to opposite (first card on left)
-    } else if (nextIdx < 0) {
-      nextIdx = N - 1; // Hit left corner -> return to opposite (last card on right)
-    }
-
-    setActiveCardIndex(nextIdx);
+    const step = carouselStepAngle || (Math.PI / 6);
+    carouselTargetAngle = carouselAngle - direction * step;
+    isCenteringCard = true;
+    carouselAngleVelocity = 0;
+    startCarouselLoop();
   }
 
   function initCarouselEvents() {
     if (carouselEventsInitialized || !shopCardsTray) return;
     carouselEventsInitialized = true;
 
-    // Mouse Wheel Scroll: down/right goes next, up/left goes prev, wraps at corners
+    // Mouse Wheel Scroll: continuous rotation without snapping
     shopCardsTray.addEventListener('wheel', (e) => {
       if (!isShopOpen || carouselCards.length <= 1) return;
       e.preventDefault();
@@ -759,17 +808,19 @@
       dismissCarouselHint();
 
       const delta = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
-      if (Math.abs(delta) < 4) return;
+      if (Math.abs(delta) < 1) return;
 
-      const now = performance.now();
-      if (now - carouselLastWheelTime < 130) return;
-      carouselLastWheelTime = now;
+      isCenteringCard = false;
+      const scrollSensitivity = 0.0007;
+      carouselAngleVelocity -= delta * scrollSensitivity;
 
-      const dir = delta > 0 ? 1 : -1;
-      rotateCarouselByStep(dir);
+      const maxVel = 0.12;
+      carouselAngleVelocity = Math.max(-maxVel, Math.min(maxVel, carouselAngleVelocity));
+
+      startCarouselLoop();
     }, { passive: false });
 
-    // Pointer / Mouse Drag across shop tray
+    // Pointer Drag across shop tray
     shopCardsTray.addEventListener('pointerdown', (e) => {
       if (!isShopOpen || carouselCards.length <= 1) return;
       if (e.target && e.target.closest('.carousel-nav-btn')) return;
@@ -777,9 +828,10 @@
       carouselIsDragging = true;
       carouselHasDragged = false;
       carouselDragStartX = e.clientX;
-      carouselDragStartIndex = carouselActiveIndex;
       carouselLastDragX = e.clientX;
       carouselLastDragTime = performance.now();
+      carouselAngleVelocity = 0;
+      isCenteringCard = false;
       dismissCarouselHint();
 
       try { shopCardsTray.setPointerCapture?.(e.pointerId); } catch(err) {}
@@ -787,30 +839,35 @@
 
     shopCardsTray.addEventListener('pointermove', (e) => {
       if (!carouselIsDragging) return;
-      const dx = e.clientX - carouselDragStartX;
-      if (Math.abs(dx) > 6) {
+      const dx = e.clientX - carouselLastDragX;
+      const totalDx = e.clientX - carouselDragStartX;
+      const now = performance.now();
+      const dt = Math.max(1, now - carouselLastDragTime);
+
+      if (Math.abs(totalDx) > 6) {
         carouselHasDragged = true;
       }
 
-      const N = carouselCards.length;
-      if (N <= 1) return;
+      const dragSensitivity = 0.0032;
+      const dAngle = dx * dragSensitivity;
 
-      // Every ~45px of drag steps to the adjacent card
-      const stepDistance = 45;
-      const stepsMoved = Math.trunc(dx / stepDistance);
-      let targetIdx = carouselDragStartIndex + stepsMoved;
-      // Handle corner wrapping
-      targetIdx = ((targetIdx % N) + N) % N;
+      carouselAngle += dAngle;
+      carouselAngleVelocity = (dAngle / dt) * 16.6;
 
-      if (targetIdx !== carouselActiveIndex) {
-        setActiveCardIndex(targetIdx);
-      }
+      carouselLastDragX = e.clientX;
+      carouselLastDragTime = now;
+
+      updateCarouselPositions();
     });
 
     const endDrag = (e) => {
       if (!carouselIsDragging) return;
       carouselIsDragging = false;
       try { shopCardsTray.releasePointerCapture?.(e.pointerId); } catch(err) {}
+
+      const maxVel = 0.12;
+      carouselAngleVelocity = Math.max(-maxVel, Math.min(maxVel, carouselAngleVelocity));
+      startCarouselLoop();
     };
 
     shopCardsTray.addEventListener('pointerup', endDrag);
@@ -843,7 +900,7 @@
   }
 
   // Dynamic Cards Shop Rendering & Updates (Dust Shop & Dirt Shop)
-  function initShopUI() {
+  function initShopUI(keyToCenter) {
     if (!shopCardsTray) return;
     const viewport = carouselCardsViewport || shopCardsTray;
     viewport.innerHTML = '';
@@ -852,7 +909,7 @@
     const isDirtShop = (currentShop === 'dirtShop');
     const currentFunds = isDirtShop ? (Values.storage.dirt || 0) : (Values.storage.dust || 0);
 
-    const prevActiveKey = carouselCards[carouselActiveIndex] ? carouselCards[carouselActiveIndex].key : null;
+    const prevClosestKey = keyToCenter || (getClosestCardToCenter() ? getClosestCardToCenter().key : null);
     carouselCards = [];
 
     const keys = Object.keys(shopData);
@@ -861,18 +918,29 @@
       return !(Values.isUpgradeVisible && !Values.isUpgradeVisible(upg));
     });
 
+    carouselVisibleKeys = visibleKeys;
     const N = visibleKeys.length;
+    if (N === 0) return;
 
-    visibleKeys.forEach((key, idx) => {
+    // Number of repetitions around full 360 circle (so cards seamlessly repeat)
+    const k = Math.max(2, Math.ceil(12 / N));
+    const totalSlots = k * N;
+    const stepAngle = (2 * Math.PI) / totalSlots;
+    carouselStepAngle = stepAngle;
+
+    for (let j = 0; j < totalSlots; j++) {
+      const keyIndex = j % N;
+      const key = visibleKeys[keyIndex];
       const upg = shopData[key];
       const cost = Values.getUpgradeCost(key, currentShop);
       const canAfford = currentFunds >= cost;
+      const isMaxed = upg.isUnlock ? (upg.level >= 1) : (upg.maxLevel ? (upg.level >= upg.maxLevel) : false);
 
       const cardEl = document.createElement('div');
-      cardEl.className = `upgrade-card ${canAfford ? 'can-afford' : 'cannot-afford'}`;
-      cardEl.id = `card-${key}`;
+      cardEl.className = `upgrade-card ${isMaxed ? 'is-owned can-afford' : (canAfford ? 'can-afford' : 'cannot-afford')}`;
       cardEl.setAttribute('data-key', key);
       cardEl.setAttribute('data-shop', currentShop);
+      cardEl.setAttribute('data-slot', j);
       cardEl.setAttribute('role', 'button');
       cardEl.setAttribute('tabindex', '0');
       cardEl.setAttribute('title', `Buy ${upg.name || key}`);
@@ -882,22 +950,39 @@
           <img class="card-img" src="${upg.image || ''}" alt="${upg.name || key}" draggable="false" />
           <div class="card-top-bar">
             <div class="card-top-header">
-              <span class="card-lvl-badge" id="card-lvl-${key}">${upg.isUnlock ? (upg.level >= 1 ? 'UNLOCKED' : 'LOCKED') : (upg.maxLevel ? `LVL ${upg.level}/${upg.maxLevel}` : `LVL ${upg.level}`)}</span>
-              <span class="card-effect-desc" id="card-effect-${key}">${upg.getEffect ? upg.getEffect(upg) : ''}</span>
+              <span class="card-lvl-badge">${upg.isUnlock ? (upg.level >= 1 ? 'UNLOCKED' : 'LOCKED') : (upg.maxLevel ? `LVL ${upg.level}/${upg.maxLevel}` : `LVL ${upg.level}`)}</span>
+              <span class="card-effect-desc">${upg.getEffect ? upg.getEffect(upg) : ''}</span>
             </div>
             <div class="card-effect-row">
               <span class="card-stat-label">Actual:</span>
-              <span class="card-stat-val" id="card-stat-${key}">${upg.getStat ? upg.getStat(upg) : ''}</span>
+              <span class="card-stat-val">${upg.getStat ? upg.getStat(upg) : ''}</span>
             </div>
           </div>
           <div class="card-price-overlay">
-            <span class="card-price-val" id="card-cost-${key}">${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g</span>
+            <span class="card-price-val">${isMaxed ? 'MAX' : `${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g`}</span>
           </div>
         </div>
       `;
 
       const cardInner = cardEl.querySelector('.card-inner');
-      const baseAngle = getCardSlotAngle(idx, N);
+      const lvlEl = cardEl.querySelector('.card-lvl-badge');
+      const effectEl = cardEl.querySelector('.card-effect-desc');
+      const statEl = cardEl.querySelector('.card-stat-val');
+      const costEl = cardEl.querySelector('.card-price-val');
+
+      const slotAngle = j * stepAngle;
+
+      const item = {
+        el: cardEl,
+        inner: cardInner,
+        lvlEl,
+        effectEl,
+        statEl,
+        costEl,
+        key,
+        slotIndex: j,
+        slotAngle
+      };
 
       // Prevent bot from moving when interacting with upgrade cards
       cardEl.addEventListener('pointerdown', (e) => {
@@ -909,7 +994,7 @@
         isLeftMouseDown = false;
       });
 
-      // Interactive 3D tilt & follow mouse on hover ONLY on the middle card
+      // Interactive 3D tilt & follow mouse on hover ONLY on the closest card
       cardEl.addEventListener('pointermove', (e) => {
         if (!cardEl.classList.contains('is-middle-card')) return;
         const rect = cardEl.getBoundingClientRect();
@@ -934,17 +1019,18 @@
         cardInner.style.filter = '';
       });
 
-      // Click card: if already selected, buy upgrade; if not, select it!
+      // Click card: buy ONLY if closest to center! Otherwise center it!
       cardEl.addEventListener('click', (e) => {
         e.stopPropagation();
         isLeftMouseDown = false;
         if (carouselHasDragged) return;
         dismissCarouselHint();
 
-        if (idx === carouselActiveIndex) {
-          buyUpgrade(key, currentShop);
+        const closest = getClosestCardToCenter();
+        if (item === closest) {
+          buyUpgrade(item.key, currentShop);
         } else {
-          setActiveCardIndex(idx);
+          rotateCardToCenter(item);
         }
       });
 
@@ -953,33 +1039,30 @@
           e.preventDefault();
           e.stopPropagation();
           isLeftMouseDown = false;
-          buyUpgrade(key, currentShop);
+          const closest = getClosestCardToCenter();
+          if (item === closest) {
+            buyUpgrade(item.key, currentShop);
+          } else {
+            rotateCardToCenter(item);
+          }
         }
       });
 
       viewport.appendChild(cardEl);
-      carouselCards.push({ el: cardEl, inner: cardInner, key, index: idx, baseAngle });
-    });
-
-    // Preserve previously active upgrade card snap position if valid
-    let targetIdx = 0;
-    if (prevActiveKey) {
-      const foundIdx = carouselCards.findIndex(c => c.key === prevActiveKey);
-      if (foundIdx !== -1) targetIdx = foundIdx;
-    } else {
-      // Default to middle card (e.g. 1 out of 3, 2 out of 5) or 0
-      targetIdx = Math.floor(N / 2);
+      carouselCards.push(item);
     }
 
-    if (N > 0) {
-      carouselActiveIndex = targetIdx;
-      carouselTargetAngle = carouselCards[carouselActiveIndex].baseAngle;
-      carouselAngle = carouselTargetAngle;
+    // Align carouselAngle so target card is centered
+    if (prevClosestKey) {
+      const matchIdx = visibleKeys.indexOf(prevClosestKey);
+      if (matchIdx !== -1) {
+        carouselAngle = -matchIdx * stepAngle;
+      }
     } else {
-      carouselActiveIndex = 0;
-      carouselTargetAngle = 0;
       carouselAngle = 0;
     }
+    carouselAngleVelocity = 0;
+    isCenteringCard = false;
 
     initCarouselEvents();
     updateCarouselPositions();
@@ -991,11 +1074,17 @@
     const shopData = (Values.shops && Values.shops[targetShop]) ? Values.shops[targetShop] : (Values.shops.dustShop[key] ? Values.shops.dustShop : Values.shops.dirtShop);
     const upg = shopData ? shopData[key] : null;
     if (!upg) return;
+
+    // Only allow buying the card closer to center
+    const closest = getClosestCardToCenter();
+    if (closest && closest.key !== key) {
+      return;
+    }
+
     if (upg.isUnlock && upg.level >= 1) return; // already unlocked
     if (upg.maxLevel && upg.level >= upg.maxLevel) return; // already maxed
 
     const cost = Values.getUpgradeCost(key, targetShop);
-    const cardEl = document.getElementById(`card-${key}`);
     const isDirtShop = (upg.currency === 'dirt' || targetShop === 'dirtShop');
     const currentFunds = isDirtShop ? (Values.storage.dirt || 0) : (Values.storage.dust || 0);
 
@@ -1033,25 +1122,32 @@
       syncAutoCleaners();
 
       updateDirtShopVisibility();
-      initShopUI();
-      updateUpgradesAndShopUI();
+
+      // Check if visible upgrade set changed (new unlock)
+      const currentVisibleKeys = Object.keys(shopData).filter(k => !(Values.isUpgradeVisible && !Values.isUpgradeVisible(shopData[k])));
+      const prevCount = carouselVisibleKeys ? carouselVisibleKeys.length : 0;
+      if (currentVisibleKeys.length !== prevCount) {
+        initShopUI(key);
+      } else {
+        updateUpgradesAndShopUI();
+      }
+
       updateCapacityAndStorageUI();
       if (window.soundEngine) window.soundEngine.playPurchaseSound();
       saveGame();
 
-      const updatedCardEl = document.getElementById(`card-${key}`);
-      if (updatedCardEl) {
-        const inner = updatedCardEl.querySelector('.card-inner') || updatedCardEl;
-        inner.classList.remove('purchased-anim', 'shake-anim');
-        void inner.offsetWidth; // trigger reflow
-        inner.classList.add('purchased-anim');
+      // Trigger purchase animation on the active center card
+      if (closest && closest.inner) {
+        closest.inner.classList.remove('purchased-anim', 'shake-anim');
+        void closest.inner.offsetWidth; // reflow
+        closest.inner.classList.add('purchased-anim');
       }
     } else {
-      if (cardEl) {
-        const inner = cardEl.querySelector('.card-inner') || cardEl;
-        inner.classList.remove('purchased-anim', 'shake-anim');
-        void inner.offsetWidth;
-        inner.classList.add('shake-anim');
+      // Not enough funds: shake animation
+      if (closest && closest.inner) {
+        closest.inner.classList.remove('purchased-anim', 'shake-anim');
+        void closest.inner.offsetWidth;
+        closest.inner.classList.add('shake-anim');
       }
     }
   }
@@ -1062,49 +1158,35 @@
     const isDirtShop = (currentShop === 'dirtShop');
     const currentFunds = isDirtShop ? (Values.storage.dirt || 0) : (Values.storage.dust || 0);
 
-    const keys = Object.keys(shopData);
-    keys.forEach((key) => {
-      const upg = shopData[key];
-
-      // Only display the card if requirement is satisfied!
-      if (Values.isUpgradeVisible && !Values.isUpgradeVisible(upg)) {
-        return;
-      }
+    carouselCards.forEach((item) => {
+      const key = item.key;
+      const upg = shopData ? shopData[key] : null;
+      if (!upg) return;
 
       const cost = Values.getUpgradeCost(key, currentShop);
       const canAfford = currentFunds >= cost;
       const isMaxed = upg.isUnlock ? (upg.level >= 1) : (upg.maxLevel ? (upg.level >= upg.maxLevel) : false);
 
-      const cardEl = document.getElementById(`card-${key}`);
-      if (cardEl) {
-        cardEl.classList.toggle('is-owned', isMaxed);
-        if (isMaxed) {
-          cardEl.classList.remove('cannot-afford');
-          cardEl.classList.add('can-afford');
-        } else {
-          cardEl.classList.toggle('can-afford', canAfford);
-          cardEl.classList.toggle('cannot-afford', !canAfford);
-        }
+      item.el.classList.toggle('is-owned', isMaxed);
+      if (isMaxed) {
+        item.el.classList.remove('cannot-afford');
+        item.el.classList.add('can-afford');
+      } else {
+        item.el.classList.toggle('can-afford', canAfford);
+        item.el.classList.toggle('cannot-afford', !canAfford);
       }
 
-      const lvlEl = document.getElementById(`card-lvl-${key}`);
-      if (lvlEl) {
-        lvlEl.textContent = upg.isUnlock ? (isMaxed ? 'UNLOCKED' : 'LOCKED') : (upg.maxLevel ? `LVL ${upg.level}/${upg.maxLevel}` : `LVL ${upg.level}`);
+      if (item.lvlEl) {
+        item.lvlEl.textContent = upg.isUnlock ? (isMaxed ? 'UNLOCKED' : 'LOCKED') : (upg.maxLevel ? `LVL ${upg.level}/${upg.maxLevel}` : `LVL ${upg.level}`);
       }
-
-      const effectEl = document.getElementById(`card-effect-${key}`);
-      if (effectEl && upg.getEffect) {
-        effectEl.textContent = upg.getEffect(upg);
+      if (item.effectEl && upg.getEffect) {
+        item.effectEl.textContent = upg.getEffect(upg);
       }
-
-      const statEl = document.getElementById(`card-stat-${key}`);
-      if (statEl && upg.getStat) {
-        statEl.textContent = upg.getStat(upg);
+      if (item.statEl && upg.getStat) {
+        item.statEl.textContent = upg.getStat(upg);
       }
-
-      const costEl = document.getElementById(`card-cost-${key}`);
-      if (costEl) {
-        costEl.textContent = isMaxed ? (upg.isUnlock ? 'OWNED' : 'MAX') : `${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g`;
+      if (item.costEl) {
+        item.costEl.textContent = isMaxed ? (upg.isUnlock ? 'OWNED' : 'MAX') : `${cost >= 100 ? cost.toFixed(0) : (cost % 1 === 0 ? cost.toFixed(0) : cost.toFixed(2))}g`;
       }
     });
 
@@ -1256,7 +1338,8 @@
     if (prevShop !== currentShop) {
       carouselAngle = 0;
       carouselTargetAngle = 0;
-      carouselActiveIndex = 0;
+      carouselAngleVelocity = 0;
+      isCenteringCard = false;
     }
     updateDirtShopVisibility();
     initShopUI();
@@ -3677,8 +3760,9 @@
         return;
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        if (carouselCards[carouselActiveIndex]) {
-          buyUpgrade(carouselCards[carouselActiveIndex].key, currentShop);
+        const closest = getClosestCardToCenter();
+        if (closest) {
+          buyUpgrade(closest.key, currentShop);
         }
         return;
       }

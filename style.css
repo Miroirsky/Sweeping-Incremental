@@ -764,23 +764,29 @@ body.dirt-shop-active .carousel-nav-btn:hover {
 
 .upgrade-card.is-middle-card {
   cursor: pointer;
+  z-index: 100 !important;
 }
 
 .upgrade-card.is-middle-card .card-img {
-  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 16px rgba(255, 208, 128, 0.45));
+  filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 20px rgba(255, 208, 128, 0.6));
 }
 
 body.dirt-shop-active .upgrade-card.is-middle-card .card-img {
-  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 16px rgba(246, 148, 102, 0.5));
+  filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 20px rgba(246, 148, 102, 0.65));
+}
+
+.upgrade-card.is-middle-card .card-price-overlay {
+  transform: scale(1.12);
 }
 
 .upgrade-card:not(.is-middle-card) {
   cursor: pointer;
+  filter: brightness(0.82) saturate(0.88);
 }
 
 .upgrade-card:not(.is-middle-card):hover {
-  filter: brightness(1.2) drop-shadow(0 12px 24px rgba(0, 0, 0, 0.85));
-  z-index: 95 !important;
+  filter: brightness(1.1) drop-shadow(0 10px 22px rgba(0, 0, 0, 0.8));
+  z-index: 90 !important;
 }
 
 .upgrade-card:not(.is-middle-card):not(:hover) .card-top-bar {
@@ -795,7 +801,7 @@ body.dirt-shop-active .upgrade-card.is-middle-card .card-img {
 }
 
 .upgrade-card:not(.is-middle-card) .card-price-overlay {
-  opacity: 0.95;
+  opacity: 0.75;
 }
 
 .upgrade-card:focus-visible .card-inner {
