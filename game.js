@@ -196,8 +196,19 @@
   let isShopOpen = false;
   let hadPlayedFullAlert = false;
 
+  function isPlayerInStation() {
+    const s = stationGeometry;
+    if (!s || !s.isOpen) return false;
+    return (
+      cleanerPos.x >= s.x &&
+      cleanerPos.x <= s.x + s.width &&
+      cleanerPos.y >= s.y &&
+      cleanerPos.y <= s.y + s.height
+    );
+  }
+
   function isStoringActionActive() {
-    return isSpaceHeld || isRightMouseDown;
+    return isPlayerInStation() && (Values.vacuum.stored > 0.0001);
   }
 
   // Movement State
@@ -330,23 +341,18 @@
         
         surface = mix(outsideFloor, trimColor, trim);
       } else if (isInsideStation && !isInsideRoom) {
-        // Inside Station alcove on the right (Tech Docking Pad Floor)
+        // Inside Station square on the right (Clean square tiles pattern)
         vec2 stationUV = (fragCoord - u_station.xy) / u_station.zw;
-        vec2 tile = fract(stationUV * vec2(3.0, 6.0));
-        float tileBorder = step(0.06, tile.x) * step(0.06, tile.y);
-        vec3 stationFloor = mix(vec3(0.11, 0.13, 0.16), vec3(0.18, 0.21, 0.26), tileBorder);
-
-        // Center runway stripe in station
-        float centerDistY = abs(stationUV.y - 0.5);
-        float runway = smoothstep(0.18, 0.04, centerDistY);
-        stationFloor = mix(stationFloor, vec3(0.14, 0.32, 0.38), runway * 0.40);
+        vec2 tile = fract(stationUV * vec2(4.0, 4.0));
+        float tileBorder = step(0.05, tile.x) * step(0.05, tile.y);
+        vec3 stationFloor = mix(vec3(0.10, 0.12, 0.15), vec3(0.18, 0.21, 0.26), tileBorder);
 
         // Ambient contact shadow along station perimeter walls
-        float sDistX = min(fragCoord.x - u_station.x, (u_station.x + u_station.z) - fragCoord.x);
+        float sDistX = (u_station.x + u_station.z) - fragCoord.x;
         float sDistY = min(fragCoord.y - u_station.y, (u_station.y + u_station.w) - fragCoord.y);
-        float sDist = min(max(0.0, (u_station.x + u_station.z) - fragCoord.x), sDistY);
+        float sDist = min(sDistX, sDistY);
         float stationShadow = smoothstep(0.0, 14.0, sDist);
-        stationFloor *= (0.75 + 0.25 * stationShadow);
+        stationFloor *= (0.78 + 0.22 * stationShadow);
 
         surface = stationFloor;
       } else {
@@ -495,12 +501,7 @@
   }
 
   function isAutoCleanerStationOpen() {
-    if (Values.getTotalAutoCleanersCount) {
-      return Values.getTotalAutoCleanersCount() >= 1;
-    }
-    const upg1 = Values.shops && Values.shops.dustShop && (Values.shops.dustShop.autoCleaner || Values.shops.dustShop['Auto Cleaner']);
-    const upg2 = Values.shops && Values.shops.dirtShop && (Values.shops.dirtShop.autoCleaner || Values.shops.dirtShop['Auto Cleaner']);
-    return (upg1 && upg1.level >= 1) || (upg2 && upg2.level >= 1);
+    return true;
   }
 
   // --- Room Geometry Calculation ---
@@ -510,23 +511,25 @@
     dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const margin = 20; // Margin around playfield
-    const isStationOpen = isAutoCleanerStationOpen();
-    stationGeometry.isOpen = isStationOpen;
+    stationGeometry.isOpen = true; // Station is always open
 
-    // Allocate right-side space for station if open (~16% of roomSize)
-    const maxRoomW = isStationOpen ? (width - margin) / 1.18 : (width - margin);
-    const maxRoomH = height - margin;
+    // Total playfield width = roomSize (square) + stationWidth (square of 1/2 room height)
+    // roomSize + 0.5 * roomSize = 1.5 * roomSize
+    const maxRoomW = (width - margin * 2) / 1.55;
+    const maxRoomH = height - margin * 2;
     roomSize = Math.max(80, Math.min(maxRoomW, maxRoomH));
 
-    const stationW = isStationOpen ? Math.max(50, Math.min(130, roomSize * 0.16)) : 0;
-    const stationH = isStationOpen ? Math.max(70, Math.min(190, roomSize * 0.35)) : 0;
+    // Station is a square that is 1/2 the height of the room (so it scales with it)
+    const stationSize = roomSize * 0.5;
+    const stationW = stationSize;
+    const stationH = stationSize;
 
     const totalPlayfieldW = roomSize + stationW;
     roomX = (width - totalPlayfieldW) * 0.5;
     roomY = (height - roomSize) * 0.5;
 
     stationGeometry.x = roomX + roomSize;
-    stationGeometry.y = roomY + (roomSize - stationH) * 0.5;
+    stationGeometry.y = roomY + (roomSize - stationH) * 0.5; // Vertically centered on right wall
     stationGeometry.width = stationW;
     stationGeometry.height = stationH;
 
@@ -1669,17 +1672,19 @@
     return { x: width - 60, y: isDirt ? (height * 0.5 + 40) : (height * 0.5 - 40) };
   }
 
-  // Transfer particles that fly from the bot to separate storage indicators at center right
-  function spawnTransferParticles(count = 2, isDirt = false) {
+  // Transfer particles that fly from the bot / station to separate storage indicators at center right
+  function spawnTransferParticles(count = 2, isDirt = false, originX = null, originY = null) {
     const target = getStorageTargetCoord(isDirt);
     const maxTransfer = (Values.particles && Values.particles.maxTransferParticles) || 90;
+    const fromX = originX != null ? originX : cleanerPos.x;
+    const fromY = originY != null ? originY : cleanerPos.y;
     for (let i = 0; i < count; i++) {
       if (transferParticles.length >= maxTransfer) break;
 
       const angle = Math.random() * Math.PI * 2;
-      const startDist = Math.random() * cleanerRadius * 0.75;
-      const startX = cleanerPos.x + Math.cos(angle) * startDist;
-      const startY = cleanerPos.y + Math.sin(angle) * startDist;
+      const startDist = Math.random() * Math.min(10, cleanerRadius * 0.75);
+      const startX = fromX + Math.cos(angle) * startDist;
+      const startY = fromY + Math.sin(angle) * startDist;
 
       const targetX = target.x + (Math.random() - 0.5) * 16;
       const targetY = target.y + (Math.random() - 0.5) * 12;
@@ -1851,299 +1856,6 @@
     }
   }
 
-  // --- Magic Black Hole Portal System for Auto Vacuum Teleportation ---
-  const blackHolePortals = [];
-
-  function spawnBlackHolePortal(x, y, type = 'entrance', baseRadius = 24, duration = 0.72) {
-    const p = {
-      id: Math.random(),
-      x: x,
-      y: y,
-      type: type, // 'entrance' (suction) or 'exit' (emergence)
-      targetRadius: Math.max(16, baseRadius),
-      currentRadius: 0,
-      duration: duration,
-      timer: duration,
-      rotation: Math.random() * Math.PI * 2,
-      swirlSpeed: (type === 'entrance' ? 5.2 : 6.4),
-      particles: [],
-      shockwaves: []
-    };
-
-    // Pre-seed accretion disk particles
-    const particleCount = 28;
-    for (let i = 0; i < particleCount; i++) {
-      const dist = type === 'entrance'
-        ? p.targetRadius * (0.8 + Math.random() * 1.5)
-        : p.targetRadius * (0.15 + Math.random() * 0.4);
-      const angle = Math.random() * Math.PI * 2;
-      p.particles.push({
-        dist: dist,
-        angle: angle,
-        speed: (type === 'entrance' ? -1 : 1) * (20 + Math.random() * 28),
-        rotSpeed: 3.5 + Math.random() * 3.5,
-        size: 1.4 + Math.random() * 2.2,
-        alpha: 0.5 + Math.random() * 0.5,
-        color: Math.random() < 0.45 ? '168, 85, 247' : (Math.random() < 0.75 ? '56, 189, 248' : '244, 114, 182')
-      });
-    }
-
-    // Opening shockwave ripple
-    p.shockwaves.push({
-      r: 4,
-      maxR: p.targetRadius * 2.3,
-      alpha: 0.9,
-      width: 2.5,
-      speed: p.targetRadius * 3.8
-    });
-
-    blackHolePortals.push(p);
-    return p;
-  }
-
-  function updateBlackHolePortals(dt) {
-    if (blackHolePortals.length === 0) return;
-    for (let i = blackHolePortals.length - 1; i >= 0; i--) {
-      const p = blackHolePortals[i];
-      p.timer -= dt;
-      if (p.timer <= 0) {
-        blackHolePortals.splice(i, 1);
-        continue;
-      }
-
-      const elapsed = p.duration - p.timer;
-      const openTime = 0.16;
-      const closeTime = 0.22;
-
-      let scale = 1.0;
-      if (elapsed < openTime) {
-        const t = elapsed / openTime;
-        scale = Math.sin(t * Math.PI * 0.5) * (1.0 + 0.16 * (1.0 - t));
-      } else if (p.timer < closeTime) {
-        const t = Math.max(0, p.timer / closeTime);
-        scale = t * t;
-      }
-      p.currentRadius = p.targetRadius * Math.max(0, scale);
-      p.rotation += p.swirlSpeed * dt;
-
-      // Collapse shockwave trigger
-      if (p.timer < closeTime && !p.hasCloseShockwave) {
-        p.hasCloseShockwave = true;
-        p.shockwaves.push({
-          r: Math.max(2, p.currentRadius * 0.4),
-          maxR: p.targetRadius * 2.2,
-          alpha: 0.9,
-          width: 2.8,
-          speed: p.targetRadius * 4.2
-        });
-      }
-
-      // Update shockwaves
-      for (let sIdx = p.shockwaves.length - 1; sIdx >= 0; sIdx--) {
-        const sw = p.shockwaves[sIdx];
-        sw.r += sw.speed * dt;
-        sw.alpha -= dt * 1.6;
-        if (sw.alpha <= 0 || sw.r >= sw.maxR) {
-          p.shockwaves.splice(sIdx, 1);
-        }
-      }
-
-      // Update particles
-      for (let ptIdx = p.particles.length - 1; ptIdx >= 0; ptIdx--) {
-        const pt = p.particles[ptIdx];
-        pt.dist += pt.speed * dt;
-        pt.angle += (pt.rotSpeed / Math.max(0.25, pt.dist / p.targetRadius)) * dt;
-
-        if (p.type === 'entrance') {
-          if (pt.dist <= p.targetRadius * 0.2) {
-            if (p.timer > closeTime) {
-              pt.dist = p.targetRadius * (1.3 + Math.random() * 0.8);
-              pt.alpha = 0.7 + Math.random() * 0.3;
-            } else {
-              p.particles.splice(ptIdx, 1);
-              continue;
-            }
-          }
-        } else {
-          if (pt.dist >= p.targetRadius * 2.2) {
-            if (p.timer > closeTime) {
-              pt.dist = p.targetRadius * (0.15 + Math.random() * 0.3);
-              pt.alpha = 0.85;
-            } else {
-              p.particles.splice(ptIdx, 1);
-              continue;
-            }
-          }
-        }
-      }
-
-      // Maintain particle count during active lifetime
-      if (p.particles.length < 24 && p.timer > closeTime) {
-        p.particles.push({
-          dist: p.type === 'entrance' ? p.targetRadius * 1.8 : p.targetRadius * 0.2,
-          angle: Math.random() * Math.PI * 2,
-          speed: (p.type === 'entrance' ? -1 : 1) * (20 + Math.random() * 26),
-          rotSpeed: 3.2 + Math.random() * 3.0,
-          size: 1.3 + Math.random() * 2.0,
-          alpha: 0.8,
-          color: Math.random() < 0.5 ? '168, 85, 247' : '56, 189, 248'
-        });
-      }
-    }
-  }
-
-  function drawBlackHolePortal(portal, isForeground) {
-    if (!portal || portal.currentRadius <= 0.5) return;
-    const r = portal.currentRadius;
-
-    overlayCtx.save();
-
-    if (!isForeground) {
-      // 1. Deep Gravitational Lensing / Cosmic Purple Nebula Glow
-      const glowR = r * 2.5;
-      const glowGrad = overlayCtx.createRadialGradient(portal.x, portal.y, r * 0.4, portal.x, portal.y, glowR);
-      glowGrad.addColorStop(0.0, 'rgba(12, 4, 24, 0.95)');
-      glowGrad.addColorStop(0.25, 'rgba(147, 51, 234, 0.48)'); // deep electric purple
-      glowGrad.addColorStop(0.6, 'rgba(56, 189, 248, 0.24)'); // cyan fringe
-      glowGrad.addColorStop(0.85, 'rgba(192, 132, 252, 0.08)');
-      glowGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
-      overlayCtx.fillStyle = glowGrad;
-      overlayCtx.beginPath();
-      overlayCtx.arc(portal.x, portal.y, glowR, 0, Math.PI * 2);
-      overlayCtx.fill();
-
-      // 2. Tilted Swirling Accretion Disk (Interstellar-style)
-      overlayCtx.save();
-      overlayCtx.translate(portal.x, portal.y);
-      overlayCtx.rotate(portal.rotation);
-      overlayCtx.scale(1.0, 0.58);
-
-      const diskR = r * 1.75;
-      const diskGrad = overlayCtx.createRadialGradient(0, 0, r * 0.68, 0, 0, diskR);
-      diskGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.95)'); // blistering photon orbit
-      diskGrad.addColorStop(0.2, 'rgba(168, 85, 247, 0.88)'); // violet plasma
-      diskGrad.addColorStop(0.5, 'rgba(236, 72, 153, 0.65)'); // magenta heat
-      diskGrad.addColorStop(0.8, 'rgba(56, 189, 248, 0.32)'); // cyan fringe
-      diskGrad.addColorStop(1.0, 'rgba(147, 51, 234, 0)');
-      overlayCtx.fillStyle = diskGrad;
-      overlayCtx.beginPath();
-      overlayCtx.arc(0, 0, diskR, 0, Math.PI * 2);
-      overlayCtx.fill();
-
-      // Swirling spiral arms (3 logarithmic spiral arms)
-      overlayCtx.lineWidth = Math.max(1.5, r * 0.08);
-      for (let arm = 0; arm < 3; arm++) {
-        const armOffset = (arm * Math.PI * 2) / 3;
-        overlayCtx.beginPath();
-        for (let step = 0; step < 22; step++) {
-          const ratio = step / 21;
-          const theta = armOffset + ratio * Math.PI * 1.5;
-          const rad = r * (0.72 + ratio * 0.98);
-          const px = Math.cos(theta) * rad;
-          const py = Math.sin(theta) * rad;
-          if (step === 0) overlayCtx.moveTo(px, py);
-          else overlayCtx.lineTo(px, py);
-        }
-        overlayCtx.strokeStyle = arm === 0
-          ? 'rgba(255, 255, 255, 0.75)'
-          : (arm === 1 ? 'rgba(56, 189, 248, 0.65)' : 'rgba(244, 114, 182, 0.65)');
-        overlayCtx.stroke();
-      }
-      overlayCtx.restore();
-
-      // 3. Singularity / Event Horizon Void (Pure Pitch-Black Depth)
-      const voidR = r * 0.72;
-      const voidGrad = overlayCtx.createRadialGradient(portal.x, portal.y, 0, portal.x, portal.y, voidR);
-      voidGrad.addColorStop(0.0, '#000000');
-      voidGrad.addColorStop(0.75, '#020006');
-      voidGrad.addColorStop(1.0, '#130424');
-      overlayCtx.fillStyle = voidGrad;
-      overlayCtx.beginPath();
-      overlayCtx.arc(portal.x, portal.y, voidR, 0, Math.PI * 2);
-      overlayCtx.fill();
-
-      // 4. Photon Sphere (Intense Neon Boundary Line)
-      overlayCtx.save();
-      overlayCtx.beginPath();
-      overlayCtx.arc(portal.x, portal.y, voidR, 0, Math.PI * 2);
-      overlayCtx.strokeStyle = 'rgba(240, 246, 255, 0.92)';
-      overlayCtx.lineWidth = Math.max(1.2, r * 0.065);
-      overlayCtx.shadowColor = '#a855f7';
-      overlayCtx.shadowBlur = 9;
-      overlayCtx.stroke();
-      overlayCtx.restore();
-
-    } else {
-      // FOREGROUND: Overlying arcane orbit rings, stardust vortex particles, shockwaves
-
-      // 1. Rotating Arcane Orbit Ring & Glyphs
-      overlayCtx.save();
-      overlayCtx.translate(portal.x, portal.y);
-      overlayCtx.rotate(-portal.rotation * 0.45);
-      overlayCtx.beginPath();
-      overlayCtx.arc(0, 0, r * 1.25, 0, Math.PI * 2);
-      overlayCtx.strokeStyle = 'rgba(192, 132, 252, 0.48)';
-      overlayCtx.lineWidth = 1.3;
-      overlayCtx.setLineDash([5, 9]);
-      overlayCtx.stroke();
-
-      // 4 Cardinal Mystic Ticks
-      overlayCtx.setLineDash([]);
-      overlayCtx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
-      overlayCtx.lineWidth = 1.5;
-      for (let m = 0; m < 4; m++) {
-        const ma = (m * Math.PI) / 2;
-        const mx1 = Math.cos(ma) * (r * 1.14);
-        const my1 = Math.sin(ma) * (r * 1.14);
-        const mx2 = Math.cos(ma) * (r * 1.36);
-        const my2 = Math.sin(ma) * (r * 1.36);
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(mx1, my1);
-        overlayCtx.lineTo(mx2, my2);
-        overlayCtx.stroke();
-      }
-      overlayCtx.restore();
-
-      // 2. Swirling Stardust Particles / Void Embers
-      const scaleRatio = r / portal.targetRadius;
-      for (let i = 0; i < portal.particles.length; i++) {
-        const pt = portal.particles[i];
-        const px = portal.x + Math.cos(pt.angle) * pt.dist;
-        const py = portal.y + Math.sin(pt.angle) * pt.dist * 0.72; // match tilt
-
-        overlayCtx.beginPath();
-        overlayCtx.arc(px, py, Math.max(0.5, pt.size * scaleRatio), 0, Math.PI * 2);
-        overlayCtx.fillStyle = `rgba(${pt.color}, ${pt.alpha})`;
-        overlayCtx.shadowColor = `rgb(${pt.color})`;
-        overlayCtx.shadowBlur = 6;
-        overlayCtx.fill();
-      }
-
-      // 3. Gravitational Shockwave Ripples
-      for (let sIdx = 0; sIdx < portal.shockwaves.length; sIdx++) {
-        const sw = portal.shockwaves[sIdx];
-        overlayCtx.save();
-        overlayCtx.beginPath();
-        overlayCtx.arc(portal.x, portal.y, sw.r, 0, Math.PI * 2);
-        overlayCtx.strokeStyle = `rgba(168, 85, 247, ${Math.max(0, sw.alpha)})`;
-        overlayCtx.lineWidth = sw.width;
-        overlayCtx.shadowColor = '#38bdf8';
-        overlayCtx.shadowBlur = 8;
-        overlayCtx.stroke();
-        overlayCtx.restore();
-      }
-    }
-
-    overlayCtx.restore();
-  }
-
-  function drawBlackHolePortals(isForeground) {
-    if (blackHolePortals.length === 0) return;
-    for (let i = 0; i < blackHolePortals.length; i++) {
-      drawBlackHolePortal(blackHolePortals[i], isForeground);
-    }
-  }
-
   function getRandomRoomPosition(margin) {
     const pad = margin || 30;
     const minX = roomX + pad;
@@ -2156,62 +1868,7 @@
     };
   }
 
-  function depositBotAtStation(bot, s, dockX) {
-    const stationCap = getStationCapacity();
-    const stationRemaining = Math.max(0, stationCap - stationStorage.stored);
-
-    const depDust = bot.storedDust || 0;
-    const depDirt = bot.storedDirt || 0;
-    const totalDep = depDust + depDirt;
-
-    if (stationRemaining > 0.0001 && totalDep > 0.0001) {
-      const actualTotalDep = Math.min(totalDep, stationRemaining);
-      const ratio = actualTotalDep / totalDep;
-      const actualDust = depDust * ratio;
-      const actualDirt = depDirt * ratio;
-
-      stationStorage.dust += actualDust;
-      stationStorage.dirt += actualDirt;
-
-      bot.storedDust = Math.max(0, depDust - actualDust);
-      bot.storedDirt = Math.max(0, depDirt - actualDirt);
-      bot.stored = bot.storedDust + bot.storedDirt;
-
-      spawnStationDepositParticles(bot.x, bot.y);
-      if (window.soundEngine && window.soundEngine.playPickContentSound) {
-        window.soundEngine.playPickContentSound();
-      }
-      if (actualTotalDep > 0.005) {
-        spawnFloatingText(`+${actualTotalDep.toFixed(2)}g deposited`, dockX, s.y - 8, '#38bdf8');
-      }
-      return actualTotalDep;
-    } else if (stationRemaining <= 0.0001 && totalDep > 0.0001) {
-      if (Math.random() < 0.3) {
-        spawnFloatingText('Station Full!', dockX, s.y - 8, '#ef4444');
-      }
-    }
-    return 0;
-  }
-
-  function startAutoCleanerTeleport(bot) {
-    bot.state = 'teleporting_in';
-    bot.teleportTimer = 0.48;
-    bot.teleportDuration = 0.48;
-    bot.teleportScale = 1.0;
-    bot.teleportSwirl = 0;
-    bot.portalOrigin = { x: bot.x, y: bot.y };
-
-    const margin = Math.max(25, bot.radius * 2.5);
-    bot.teleportTarget = getRandomRoomPosition(margin);
-
-    spawnBlackHolePortal(bot.x, bot.y, 'entrance', Math.max(16, bot.radius * 2.3), 0.72);
-    if (window.soundEngine && window.soundEngine.playBlackHoleEntrance) {
-      window.soundEngine.playBlackHoleEntrance();
-    }
-  }
-
   function updateAutoCleanersSimulation(dt, now) {
-    updateBlackHolePortals(dt);
     if (autoCleaners.length === 0) return;
 
     const currentRadius = getAutoVacuumRadius();
@@ -2220,7 +1877,7 @@
     const currentCleanRate = getAutoVacuumCleanRate();
 
     const s = stationGeometry;
-    const dockX = s.isOpen ? (s.x + s.width * 0.45) : (roomX + roomSize);
+    const dockX = s.isOpen ? (s.x + s.width * 0.5) : (roomX + roomSize);
     const dockY = s.isOpen ? (s.y + s.height * 0.5) : (roomY + roomSize * 0.5);
 
     for (let bIdx = 0; bIdx < autoCleaners.length; bIdx++) {
@@ -2229,119 +1886,171 @@
       bot.capacity = currentCap;
       bot.pulseAnim = (bot.pulseAnim || 0) + dt * 4.0;
 
-      if (!bot.state) bot.state = 'cleaning';
+      if (!bot.state || bot.state === 'teleporting_in' || bot.state === 'teleporting_out') bot.state = 'cleaning';
 
       // Transition to returning when full
       if (bot.state === 'cleaning' && bot.stored >= bot.capacity - 0.0001 && s.isOpen) {
         bot.state = 'returning';
+        const minStationX = s.x + bot.radius + 8;
+        const maxStationX = s.x + s.width - bot.radius - 8;
+        const minStationY = s.y + bot.radius + 8;
+        const maxStationY = s.y + s.height - bot.radius - 8;
+        bot.stationTarget = {
+          x: minStationX + Math.random() * Math.max(10, maxStationX - minStationX),
+          y: minStationY + Math.random() * Math.max(10, maxStationY - minStationY)
+        };
       }
 
-      // State: Docked at station
-      if (bot.state === 'docked') {
-        bot.dockTimer = (bot.dockTimer || 0) - dt;
-        if (bot.dockTimer <= 0) {
-          const stationCap = getStationCapacity();
-          const stationRemaining = Math.max(0, stationCap - stationStorage.stored);
-
-          // If still carrying dust/dirt and station has space, deposit it now!
-          if (stationRemaining > 0.0001 && (bot.stored || 0) > 0.0001) {
-            depositBotAtStation(bot, s, dockX);
-            bot.dockTimer = 0.45;
-            continue;
-          }
-
-          if ((bot.stored || 0) >= bot.capacity - 0.0001 && stationRemaining <= 0.0001) {
-            bot.dockTimer = 0.5; // wait at dock until station has room
-            continue;
-          }
-
-          // Successfully deposited or ready to resume: teleport into the room!
-          startAutoCleanerTeleport(bot);
-        }
-        continue; // stationary while docked
-      }
-
-      // State: Sucked into Entrance Black Hole Portal
-      if (bot.state === 'teleporting_in') {
-        bot.teleportTimer -= dt;
-        const progress = Math.min(1.0, Math.max(0, 1.0 - (bot.teleportTimer / bot.teleportDuration)));
-        bot.teleportScale = Math.max(0, 1.0 - progress * progress);
-        bot.teleportSwirl = (bot.teleportSwirl || 0) + dt * 14.0;
-
-        if (bot.portalOrigin) {
-          bot.x += (bot.portalOrigin.x - bot.x) * Math.min(1.0, dt * 10.0);
-          bot.y += (bot.portalOrigin.y - bot.y) * Math.min(1.0, dt * 10.0);
-        }
-
-        if (bot.teleportTimer <= 0) {
-          bot.state = 'teleporting_out';
-          bot.teleportTimer = 0.48;
-          bot.teleportDuration = 0.48;
-          bot.teleportScale = 0.0;
-          bot.teleportSwirl = -Math.PI * 4.0;
-
-          bot.x = bot.teleportTarget.x;
-          bot.y = bot.teleportTarget.y;
-          bot.prevX = bot.x;
-          bot.prevY = bot.y;
-
-          spawnBlackHolePortal(bot.x, bot.y, 'exit', Math.max(16, bot.radius * 2.3), 0.72);
-          if (window.soundEngine && window.soundEngine.playBlackHoleExit) {
-            window.soundEngine.playBlackHoleExit();
-          }
-        }
-        continue;
-      }
-
-      // State: Emerging from Exit Black Hole Portal
-      if (bot.state === 'teleporting_out') {
-        bot.teleportTimer -= dt;
-        const progress = Math.min(1.0, Math.max(0, 1.0 - (bot.teleportTimer / bot.teleportDuration)));
-        const sinProg = Math.sin(progress * Math.PI * 0.5);
-        bot.teleportScale = Math.min(1.0, sinProg * (1.0 + 0.16 * (1.0 - progress)));
-        bot.teleportSwirl = (1.0 - progress) * (-Math.PI * 3.5);
-
-        if (bot.teleportTimer <= 0) {
-          bot.state = 'cleaning';
-          bot.teleportScale = 1.0;
-          bot.teleportSwirl = 0;
-          bot.angle = Math.random() * Math.PI * 2;
-          bot.turnTimer = 1.0 + Math.random() * 2.0;
-          spawnFloatingText('✦ Deployed', bot.x, bot.y - bot.radius - 8, '#38bdf8');
-          spawnDustParticles(bot.x, bot.y, 4, false);
-        }
-        continue;
-      }
-
-      // State: Returning to station
+      // State: Returning to station (physically moves through doorway into station)
       if (bot.state === 'returning' && s.isOpen) {
-        let steerTargetX = dockX;
-        let steerTargetY = dockY;
+        if (!bot.stationTarget) {
+          const minStationX = s.x + bot.radius + 8;
+          const maxStationX = s.x + s.width - bot.radius - 8;
+          const minStationY = s.y + bot.radius + 8;
+          const maxStationY = s.y + s.height - bot.radius - 8;
+          bot.stationTarget = {
+            x: minStationX + Math.random() * Math.max(10, maxStationX - minStationX),
+            y: minStationY + Math.random() * Math.max(10, maxStationY - minStationY)
+          };
+        }
 
-        // If still in main room, steer towards the doorway threshold
+        let steerTargetX = bot.stationTarget.x;
+        let steerTargetY = bot.stationTarget.y;
+
+        // If still in main room, steer through the doorway opening
         if (bot.x < roomX + roomSize - bot.radius * 0.5) {
           steerTargetX = roomX + roomSize + 5;
-          steerTargetY = dockY;
+          steerTargetY = Math.max(s.y + bot.radius + 6, Math.min(s.y + s.height - bot.radius - 6, bot.stationTarget.y));
         }
 
         const dx = steerTargetX - bot.x;
         const dy = steerTargetY - bot.y;
         const dist = Math.hypot(dx, dy);
-
-        // Turn towards target
-        const desiredAngle = Math.atan2(dy, dx);
-        bot.angle = desiredAngle;
-
-        // Move towards target
-        const step = Math.min(dist, currentSpeed * dt * 1.3); // slightly brisker return
+        bot.angle = Math.atan2(dy, dx);
+        const step = Math.min(dist, currentSpeed * dt * 1.3);
         bot.x += Math.cos(bot.angle) * step;
         bot.y += Math.sin(bot.angle) * step;
 
-        // Check if arrived at dock
-        if (Math.hypot(dockX - bot.x, dockY - bot.y) < Math.max(6.0, bot.radius * 0.5)) {
+        // Once inside station boundary, start docked unloading & wandering
+        if (bot.x >= s.x + bot.radius + 2) {
           bot.state = 'docked';
-          bot.dockTimer = 0.65; // brief unload pause
-          depositBotAtStation(bot, s, dockX);
+          bot.turnTimer = 0.5 + Math.random() * 1.5;
+          bot.turnSpeed = (Math.random() - 0.5) * 2.0;
+        }
+        continue;
+      }
+
+      // State: Docked at station (Unloading directly to storage at 1g/s while wandering)
+      if (bot.state === 'docked') {
+        const unloadRate = 1.0; // 1g/s directly to storage
+        if ((bot.stored || 0) > 0.0001) {
+          const transferAmount = Math.min(bot.stored, unloadRate * dt);
+          const ratio = transferAmount / bot.stored;
+          const dustAmount = (bot.storedDust || 0) * ratio;
+          const dirtAmount = (bot.storedDirt || 0) * ratio;
+
+          bot.storedDust = Math.max(0, (bot.storedDust || 0) - dustAmount);
+          bot.storedDirt = Math.max(0, (bot.storedDirt || 0) - dirtAmount);
+          bot.stored = Math.max(0, (bot.storedDust || 0) + (bot.storedDirt || 0));
+
+          const dustMult = Values.getEffectiveDustMultiplier ? Values.getEffectiveDustMultiplier() : 1.0;
+          Values.storage.dust = (Values.storage.dust || 0) + dustAmount * dustMult;
+          Values.storage.dirt = (Values.storage.dirt || 0) + dirtAmount;
+
+          updateCapacityAndStorageUI();
+
+          if (Math.random() < 0.35) {
+            spawnTransferParticles(1, dirtAmount > dustAmount, bot.x, bot.y);
+          }
+          if (Math.random() < 0.2 && window.soundEngine && window.soundEngine.playStoreBlip) {
+            window.soundEngine.playStoreBlip();
+          }
+
+          // Autonomous wandering inside the station so bots do not bunch in one spot
+          bot.turnTimer = (bot.turnTimer || 0) - dt;
+          if (bot.turnTimer <= 0) {
+            bot.turnSpeed = (Math.random() - 0.5) * 2.0;
+            bot.turnTimer = 1.0 + Math.random() * 2.0;
+          }
+          bot.angle = (bot.angle || 0) + bot.turnSpeed * dt;
+
+          const stationWanderSpeed = currentSpeed * 0.75;
+          let nextX = bot.x + Math.cos(bot.angle) * stationWanderSpeed * dt;
+          let nextY = bot.y + Math.sin(bot.angle) * stationWanderSpeed * dt;
+
+          // Bounded strictly inside station walls
+          const sMinX = s.x + bot.radius + 2;
+          const sMaxX = s.x + s.width - bot.radius - 2;
+          const sMinY = s.y + bot.radius + 2;
+          const sMaxY = s.y + s.height - bot.radius - 2;
+
+          if (nextX <= sMinX) {
+            nextX = sMinX;
+            bot.angle = Math.PI - bot.angle + (Math.random() - 0.5) * 0.4;
+            bot.turnTimer = 0.6 + Math.random();
+          } else if (nextX >= sMaxX) {
+            nextX = sMaxX;
+            bot.angle = Math.PI - bot.angle + (Math.random() - 0.5) * 0.4;
+            bot.turnTimer = 0.6 + Math.random();
+          }
+
+          if (nextY <= sMinY) {
+            nextY = sMinY;
+            bot.angle = -bot.angle + (Math.random() - 0.5) * 0.4;
+            bot.turnTimer = 0.6 + Math.random();
+          } else if (nextY >= sMaxY) {
+            nextY = sMaxY;
+            bot.angle = -bot.angle + (Math.random() - 0.5) * 0.4;
+            bot.turnTimer = 0.6 + Math.random();
+          }
+
+          bot.x = nextX;
+          bot.y = nextY;
+        } else {
+          // Finished unloading! Pick random spot in room and drive there to clean
+          bot.stored = 0;
+          bot.storedDust = 0;
+          bot.storedDirt = 0;
+          spawnFloatingText('✦ Stored!', bot.x, bot.y - bot.radius - 8, '#38bdf8');
+          bot.state = 'leaving';
+          const margin = Math.max(25, bot.radius * 2.5);
+          bot.roomTarget = getRandomRoomPosition(margin);
+        }
+        continue;
+      }
+
+      // State: Leaving station to a random place in the room
+      if (bot.state === 'leaving') {
+        if (!bot.roomTarget) {
+          const margin = Math.max(25, bot.radius * 2.5);
+          bot.roomTarget = getRandomRoomPosition(margin);
+        }
+
+        let steerTargetX = bot.roomTarget.x;
+        let steerTargetY = bot.roomTarget.y;
+
+        // If still inside station or doorway, steer through the doorway opening
+        if (bot.x > roomX + roomSize - bot.radius) {
+          steerTargetX = roomX + roomSize - bot.radius - 6;
+          steerTargetY = Math.max(s.y + bot.radius + 6, Math.min(s.y + s.height - bot.radius - 6, bot.roomTarget.y));
+        }
+
+        const dx = steerTargetX - bot.x;
+        const dy = steerTargetY - bot.y;
+        const dist = Math.hypot(dx, dy);
+        bot.angle = Math.atan2(dy, dx);
+        const step = Math.min(dist, currentSpeed * dt * 1.15);
+        bot.x += Math.cos(bot.angle) * step;
+        bot.y += Math.sin(bot.angle) * step;
+
+        // Once arrived at target in room, start cleaning!
+        const distToRoomTarget = Math.hypot(bot.roomTarget.x - bot.x, bot.roomTarget.y - bot.y);
+        if (bot.x <= roomX + roomSize - bot.radius && distToRoomTarget < 25) {
+          bot.state = 'cleaning';
+          bot.angle = Math.random() * Math.PI * 2;
+          bot.turnTimer = 1.0 + Math.random() * 2.0;
+          bot.turnSpeed = (Math.random() - 0.5) * 1.8;
+          spawnFloatingText('✦ Cleaning', bot.x, bot.y - bot.radius - 8, '#38bdf8');
         }
         continue;
       }
@@ -2485,25 +2194,17 @@
 
   function drawAutoCleaner(bot) {
     if (!bot || isNaN(bot.x) || isNaN(bot.y)) return;
-    const scale = bot.teleportScale != null ? bot.teleportScale : 1.0;
-    if (scale <= 0.005) return;
 
     const r = Math.max(6.0, bot.radius || getAutoVacuumRadius() || 12.0);
     const topOffsetRatio = (Values.getAutoVacuumTopVisualOffset)
       ? Values.getAutoVacuumTopVisualOffset()
       : ((Values.autoVacuum && Values.autoVacuum.topVisualOffset != null) ? Values.autoVacuum.topVisualOffset : 0.15);
     const topOffsetY = -r * topOffsetRatio;
-    const rotation = (bot.angle != null ? bot.angle : 0) - Math.PI * 0.5 + (bot.teleportSwirl || 0);
+    const rotation = (bot.angle != null ? bot.angle : 0) - Math.PI * 0.5;
 
     overlayCtx.save();
     overlayCtx.imageSmoothingEnabled = true;
     overlayCtx.imageSmoothingQuality = 'high';
-
-    if (scale !== 1.0) {
-      overlayCtx.translate(bot.x, bot.y);
-      overlayCtx.scale(scale, scale);
-      overlayCtx.translate(-bot.x, -bot.y);
-    }
 
     // 1. Draw Bottom image (Base under which pixels are cleaning)
     if (bobBottomImg.complete && bobBottomImg.naturalWidth > 0) {
@@ -2517,6 +2218,18 @@
       overlayCtx.arc(bot.x, bot.y, r, 0, Math.PI * 2);
       overlayCtx.fillStyle = '#a2a2a2';
       overlayCtx.fill();
+    }
+
+    // Suction indicator ring when actively vacuuming with Right Click
+    if (isRightMouseDown) {
+      overlayCtx.save();
+      overlayCtx.beginPath();
+      overlayCtx.arc(cleanerPos.x, cleanerPos.y, r * 1.08, 0, Math.PI * 2);
+      overlayCtx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+      overlayCtx.lineWidth = 1.8;
+      overlayCtx.setLineDash([4, 4]);
+      overlayCtx.stroke();
+      overlayCtx.restore();
     }
 
     // 2. Draw Top image (Visual lid hovering above base with same orientation)
@@ -2585,7 +2298,7 @@
 
     overlayCtx.restore();
 
-    // 3. Label Tag (Status text above elevated top lid, no red outline)
+    // 3. Label Tag (Status text above elevated top lid)
     overlayCtx.font = '700 10px Outfit, sans-serif';
     overlayCtx.textAlign = 'center';
     overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.85)';
@@ -2594,22 +2307,13 @@
     const labelY = bot.y - r * (1.0 + Math.max(0, topOffsetRatio)) - 6;
     if (bot.state === 'returning') {
       overlayCtx.fillStyle = '#f87171';
-      overlayCtx.fillText('Full -> Docking', bot.x, labelY);
+      overlayCtx.fillText('Full -> Station', bot.x, labelY);
     } else if (bot.state === 'docked') {
-      const stationRemaining = getStationCapacity() - stationStorage.stored;
-      if (stationRemaining <= 0.0001 && bot.stored > 0.01) {
-        overlayCtx.fillStyle = '#f87171';
-        overlayCtx.fillText('Station Full', bot.x, labelY);
-      } else {
-        overlayCtx.fillStyle = '#38bdf8';
-        overlayCtx.fillText('Unloading...', bot.x, labelY);
-      }
-    } else if (bot.state === 'teleporting_in') {
-      overlayCtx.fillStyle = '#c084fc';
-      overlayCtx.fillText('✦ Void Warp', bot.x, labelY);
-    } else if (bot.state === 'teleporting_out') {
       overlayCtx.fillStyle = '#38bdf8';
-      overlayCtx.fillText('✦ Emerging', bot.x, labelY);
+      overlayCtx.fillText(`Storing (${bot.stored.toFixed(2)}g)`, bot.x, labelY);
+    } else if (bot.state === 'leaving') {
+      overlayCtx.fillStyle = '#a7f3d0';
+      overlayCtx.fillText('To Room...', bot.x, labelY);
     } else if (bot.stored > 0.01) {
       overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       overlayCtx.fillText(`${bot.stored.toFixed(2)}g`, bot.x, labelY);
@@ -2624,102 +2328,37 @@
     }
   }
 
-  // Draw Station (Docking Pad, Storage Tank Silo, Labels) on overlayCanvas
+  // Draw Station (Outline & Title only) on overlayCanvas
   function drawStation() {
     if (!stationGeometry.isOpen) return;
     const s = stationGeometry;
 
     overlayCtx.save();
 
-    // 1. Station perimeter subtle border
-    overlayCtx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
-    overlayCtx.lineWidth = 1.5;
-    overlayCtx.setLineDash([4, 4]);
-    overlayCtx.strokeRect(s.x, s.y, s.width, s.height);
-    overlayCtx.setLineDash([]);
-
-    // 2. Glowing central docking pad
-    const padX = s.x + s.width * 0.42;
-    const padY = s.y + s.height * 0.5;
-    const padR = Math.max(13, Math.min(26, s.height * 0.28));
-
-    const now = performance.now() * 0.003;
-    const pulse = 0.5 + 0.5 * Math.sin(now);
+    // 1. Station Outline (Top, Right, Bottom walls - doorway on left is open to room)
+    overlayCtx.strokeStyle = 'rgba(56, 189, 248, 0.9)';
+    overlayCtx.lineWidth = 2.5;
+    overlayCtx.lineCap = 'round';
+    overlayCtx.lineJoin = 'round';
+    overlayCtx.shadowColor = '#0284c7';
+    overlayCtx.shadowBlur = 8;
 
     overlayCtx.beginPath();
-    overlayCtx.arc(padX, padY, padR, 0, Math.PI * 2);
-    overlayCtx.fillStyle = `rgba(14, 165, 233, ${0.12 + 0.08 * pulse})`;
-    overlayCtx.fill();
-    overlayCtx.strokeStyle = `rgba(56, 189, 248, ${0.5 + 0.35 * pulse})`;
-    overlayCtx.lineWidth = 2.0;
+    overlayCtx.moveTo(s.x, s.y);
+    overlayCtx.lineTo(s.x + s.width, s.y);
+    overlayCtx.lineTo(s.x + s.width, s.y + s.height);
+    overlayCtx.lineTo(s.x, s.y + s.height);
     overlayCtx.stroke();
 
-    // Docking crosshair circle
-    overlayCtx.beginPath();
-    overlayCtx.arc(padX, padY, padR * 0.5, 0, Math.PI * 2);
-    overlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-    overlayCtx.lineWidth = 1.4;
-    overlayCtx.stroke();
-
-    // Floor runway indicator pointing into dock
-    overlayCtx.font = '700 11px Outfit, sans-serif';
+    // 2. Station Title ("STATION")
+    const fontSize = Math.max(12, Math.min(18, s.width * 0.09));
+    overlayCtx.font = `700 ${fontSize}px Outfit, sans-serif`;
     overlayCtx.textAlign = 'center';
-    overlayCtx.fillStyle = `rgba(56, 189, 248, ${0.35 + 0.25 * pulse})`;
-    overlayCtx.fillText('▶▶', s.x + 14, padY + 4);
-
-    // 3. Station Storage Tank / Silo (at right edge of station)
-    const tankX = s.x + s.width - 15;
-    const tankY = padY;
-    const tankW = 12;
-    const tankH = Math.min(48, s.height * 0.65);
-
-    // Tank outline & backdrop
-    overlayCtx.fillStyle = '#0f172a';
-    overlayCtx.fillRect(tankX - tankW * 0.5, tankY - tankH * 0.5, tankW, tankH);
-    overlayCtx.strokeStyle = '#38bdf8';
-    overlayCtx.lineWidth = 1.5;
-    overlayCtx.strokeRect(tankX - tankW * 0.5, tankY - tankH * 0.5, tankW, tankH);
-
-    // Tank fill levels (grey for dust, brown for dirt)
-    const storedMass = stationStorage.stored;
-    const stationCap = getStationCapacity();
-    const fillRatio = Math.min(1.0, storedMass / stationCap);
-    if (fillRatio > 0.005) {
-      const totalFillH = (tankH - 2) * fillRatio;
-      const dustRatio = storedMass > 0 ? (stationStorage.dust / storedMass) : 1;
-      const dustH = totalFillH * dustRatio;
-      const dirtH = totalFillH - dustH;
-
-      const bottomY = tankY + tankH * 0.5 - 1;
-      if (dustH > 0) {
-        overlayCtx.fillStyle = '#9ca3af';
-        overlayCtx.fillRect(tankX - tankW * 0.5 + 1, bottomY - dustH, tankW - 2, dustH);
-      }
-      if (dirtH > 0) {
-        overlayCtx.fillStyle = '#b8624a';
-        overlayCtx.fillRect(tankX - tankW * 0.5 + 1, bottomY - dustH - dirtH, tankW - 2, dirtH);
-      }
-    }
-
-    // 4. Station Labels & Value Tag
-    overlayCtx.font = '700 10px Outfit, sans-serif';
-    overlayCtx.textAlign = 'center';
-    overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-    overlayCtx.shadowBlur = 4;
-
-    overlayCtx.fillStyle = '#94a3b8';
-    overlayCtx.fillText('STATION', s.x + s.width * 0.5, s.y - 7);
-
-    const isStationFull = storedMass >= stationCap - 0.001;
-    if (storedMass > 0.005) {
-      overlayCtx.fillStyle = isStationFull ? '#f87171' : '#4ade80';
-      overlayCtx.fillText(`${storedMass.toFixed(1)} / ${stationCap.toFixed(0)}g`, padX, padY - padR - 5);
-      overlayCtx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-      overlayCtx.fillText(isStationFull ? 'Stand to collect (Full!)' : 'Stand to collect', s.x + s.width * 0.5, s.y + s.height + 12);
-    } else {
-      overlayCtx.fillStyle = 'rgba(148, 163, 184, 0.6)';
-      overlayCtx.fillText(`Empty (${stationCap.toFixed(0)}g)`, padX, padY - padR - 5);
-    }
+    overlayCtx.textBaseline = 'bottom';
+    overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+    overlayCtx.shadowBlur = 5;
+    overlayCtx.fillStyle = '#38bdf8';
+    overlayCtx.fillText('STATION', s.x + s.width * 0.5, s.y - 6);
 
     overlayCtx.restore();
   }
@@ -2867,22 +2506,19 @@
       : ((Values.vacuum && Values.vacuum.topVisualOffset != null) ? Values.vacuum.topVisualOffset : 0.15);
     const labelY = cleanerPos.y - cleanerRadius * (1.0 + Math.max(0, topOffsetRatio)) - 8;
 
-    if (isFull) {
+    if (isFull && !isPlayerInStation()) {
       overlayCtx.save();
       overlayCtx.font = '700 11px Outfit, sans-serif';
       overlayCtx.textAlign = 'center';
       overlayCtx.fillStyle = 'rgba(239, 68, 68, 0.95)';
-      overlayCtx.fillText('FULL (Hold Right Click / Space)', cleanerPos.x, labelY);
+      overlayCtx.fillText('FULL (Go to Station)', cleanerPos.x, labelY);
       overlayCtx.restore();
-    }
-
-    // Indicator if storing dust or locked while Space or Right Click is pressed:
-    if (isStoringActionActive()) {
+    } else if (isStoringActionActive()) {
       overlayCtx.save();
       overlayCtx.font = '700 11px Outfit, sans-serif';
       overlayCtx.textAlign = 'center';
       overlayCtx.fillStyle = 'rgba(74, 222, 128, 0.95)';
-      overlayCtx.fillText(Values.vacuum.stored > 0.0001 ? 'STORING (Locked)...' : 'LOCKED...', cleanerPos.x, labelY);
+      overlayCtx.fillText('STORING...', cleanerPos.x, labelY);
       overlayCtx.restore();
     }
 
@@ -2980,14 +2616,10 @@
     // Draw Station (Docking Pad, Silo Tank, Status)
     drawStation();
 
-    // Draw Black Hole Portals (Background: singularity void, accretion disk, photon ring)
-    drawBlackHolePortals(false);
 
     // Draw active autonomous cleaners
     drawAutoCleaners();
 
-    // Draw Black Hole Portals (Foreground: swirling stardust vortex, arcane rings, shockwaves)
-    drawBlackHolePortals(true);
 
     // Update and draw floating feedback texts
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
@@ -3168,7 +2800,6 @@
     transferParticles.length = 0;
     splashParticles.length = 0;
     autoCleaners.length = 0;
-    blackHolePortals.length = 0;
     floatingTexts.length = 0;
     autoCleanerParticles.length = 0;
     dirtZones = [];
@@ -3252,10 +2883,10 @@
     const isVacuumFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
 
     // Storing dust and dirt into their separate Infinite Storages:
-    // Hold Space or Right Click to store
+    // "instead of pressing right click to sell you need to go in the station"
     const isStoringActive = isStoringActionActive() && (Values.vacuum.stored > 0.0001);
     if (isStoringActive) {
-      const storeRate = Values.getEffectiveStoreRate ? Values.getEffectiveStoreRate() : (Values.vacuum.storeRate || 0.1);
+      const storeRate = Values.getEffectiveStoreRate ? Values.getEffectiveStoreRate() : (Values.vacuum.storeRate || 1.0);
       const transferTotal = Math.min(Values.vacuum.stored, storeRate * dt);
 
       let transferDust = 0;
@@ -3290,10 +2921,10 @@
 
       // Spawn transfer particles streaming from bot to their separate storage indicators
       if (transferDust > 0.0001) {
-        spawnTransferParticles(2, false); // flies to Dust Storage
+        spawnTransferParticles(2, false, cleanerPos.x, cleanerPos.y); // flies to Dust Storage
       }
       if (transferDirt > 0.0001) {
-        spawnTransferParticles(2, true);  // flies to Dirt Storage
+        spawnTransferParticles(2, true, cleanerPos.x, cleanerPos.y);  // flies to Dirt Storage
       }
     }
 
@@ -3302,27 +2933,29 @@
     // "dirt is capped at 100g on the screen (when under 100, more dirt appear but never exeed 100g)"
     updateDirtZones(dt, now);
 
-    // Vacuum moves and cleans ONLY when left click is held down AND storing is NOT active:
-    // When Space or Right Click is held, player cannot move or clean (prevents clean & insta-store)
-    if (!isStoringActionActive() && isLeftMouseDown) {
+    // 1. Vacuum moves towards mouse when Left Click is held:
+    let isMoving = false;
+    let distToMouse = 0;
+    if (isLeftMouseDown) {
       const dx = mousePos.x - cleanerPos.x;
       const dy = mousePos.y - cleanerPos.y;
-      const dist = Math.hypot(dx, dy);
+      distToMouse = Math.hypot(dx, dy);
 
-      if (dist > 0.01) {
+      if (distToMouse > 0.01) {
+        isMoving = true;
         // Speed: base speed * effective speed multiplier
         const screenDimension = Math.min(width, height);
         const speedPxPerSec = screenDimension * getSpeedRatio();
-        const step = Math.min(dist, speedPxPerSec * dt);
+        const step = Math.min(distToMouse, speedPxPerSec * dt);
 
-        cleanerPos.x += (dx / dist) * step;
-        cleanerPos.y += (dy / dist) * step;
+        cleanerPos.x += (dx / distToMouse) * step;
+        cleanerPos.y += (dy / distToMouse) * step;
 
         // Keep vacuum bounded strictly inside the room or station alcove
         clampCleanerToPlayfield(cleanerPos, cleanerRadius);
 
         // Turn towards movement direction
-        if (dist > 1.0) {
+        if (distToMouse > 1.0) {
           const targetAngle = Math.atan2(dy, dx);
           let diff = targetAngle - cleanerAngle;
           while (diff < -Math.PI) diff += Math.PI * 2;
@@ -3331,7 +2964,10 @@
           Values.cleanerAngle = cleanerAngle;
         }
       }
+    }
 
+    // 2. Vacuum cleans under it when Right Click is held:
+    if (isRightMouseDown) {
       // Convert cleaner position to grid coords (cleans under the vacuum whether moving or stationary!)
       if (cleanerPos.x < roomX + roomSize) {
         const gx = ((cleanerPos.x - roomX) / roomSize) * GRID_RES;
@@ -3428,64 +3064,19 @@
             }
           }
         } else {
-          // Sweeping over clean carpet or stationary absorbing: hum
+          // Vacuum motor humming while right click held:
           if (window.soundEngine) {
-            window.soundEngine.updateMovement(dist > 0.01 ? 0.2 : 0.15);
+            window.soundEngine.updateMovement(isMoving ? 0.35 : 0.2);
           }
         }
       }
     } else {
+      // Right click not held: suction motor off
       if (window.soundEngine) {
-        window.soundEngine.updateMovement(0);
-      }
-    }
-
-    // Station collection: when the player Roomba is in the station alcove, collect stored dust & dirt into player vacuum
-    if (stationGeometry.isOpen && stationStorage.stored > 0.0001) {
-      const isPlayerInStation = (
-        cleanerPos.x >= stationGeometry.x - cleanerRadius * 0.4 &&
-        cleanerPos.x <= stationGeometry.x + stationGeometry.width + 5 &&
-        cleanerPos.y >= stationGeometry.y - 5 &&
-        cleanerPos.y <= stationGeometry.y + stationGeometry.height + 5
-      );
-      if (isPlayerInStation) {
-        const pSpace = Math.max(0, maxCapacity - (Values.vacuum.stored || 0));
-        if (pSpace > 0.0001) {
-          const tRate = Math.max(6.0, maxCapacity * 2.5); // brisk transfer
-          const tAmount = Math.min(stationStorage.stored, pSpace, tRate * dt);
-          const r = tAmount / stationStorage.stored;
-          const tDust = stationStorage.dust * r;
-          const tDirt = stationStorage.dirt * r;
-
-          stationStorage.dust -= tDust;
-          stationStorage.dirt -= tDirt;
-
-          Values.vacuum.storedDust = (Values.vacuum.storedDust || 0) + tDust;
-          Values.vacuum.storedDirt = (Values.vacuum.storedDirt || 0) + tDirt;
-          Values.vacuum.stored = Values.vacuum.storedDust + Values.vacuum.storedDirt;
-
-          updateCapacityAndStorageUI();
-
-          if (Math.random() < 0.6) {
-            spawnStationPickupParticles(
-              stationGeometry.x + stationGeometry.width * 0.75,
-              stationGeometry.y + stationGeometry.height * 0.5,
-              cleanerPos.x,
-              cleanerPos.y,
-              tDirt > tDust
-            );
-          }
-          if (Math.random() < 0.25 && window.soundEngine && window.soundEngine.playPickContentSound) {
-            window.soundEngine.playPickContentSound();
-          }
-
-          if (Values.vacuum.stored >= maxCapacity - 0.0001) {
-            Values.vacuum.stored = maxCapacity;
-            if (!hadPlayedFullAlert) {
-              hadPlayedFullAlert = true;
-              if (window.soundEngine) window.soundEngine.playFullWarning();
-            }
-          }
+        if (isMoving) {
+          window.soundEngine.updateMovement(0.12);
+        } else {
+          window.soundEngine.updateMovement(0);
         }
       }
     }
@@ -3633,14 +3224,14 @@
 
   // --- Input Event Listeners ---
   function onMouseDown(e) {
-    // Prevent vacuum movement/storing when clicking buttons, upgrade cards, or UI controls
+    // Prevent vacuum movement/cleaning when clicking buttons, upgrade cards, or UI controls
     if (e.target && e.target.closest('button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"]')) {
       isLeftMouseDown = false;
       isRightMouseDown = false;
       return;
     }
 
-    if (e.button === 0) { // Left click: move & vacuum
+    if (e.button === 0) { // Left click: move
       isLeftMouseDown = true;
       mousePos.x = e.clientX;
       mousePos.y = e.clientY;
@@ -3652,16 +3243,18 @@
       if (window.soundEngine) {
         window.soundEngine.resume();
       }
-    } else if (e.button === 2) { // Right click: store dust & dirt into storage
+    } else if (e.button === 2) { // Right click: clean / vacuum
       e.preventDefault();
-      if (!isRightMouseDown) {
-        isRightMouseDown = true;
-        if (window.soundEngine) {
-          window.soundEngine.resume();
-          if (Values.vacuum.stored > 0.0001) {
-            window.soundEngine.playStoreBlip();
-          }
-        }
+      isRightMouseDown = true;
+      mousePos.x = e.clientX;
+      mousePos.y = e.clientY;
+
+      if (!hasUserMovedMouse) {
+        hasUserMovedMouse = true;
+        hintOverlay.classList.add('fade-out');
+      }
+      if (window.soundEngine) {
+        window.soundEngine.resume();
       }
     }
   }
@@ -3669,11 +3262,11 @@
   function onMouseUp(e) {
     if (e.button === 0) {
       isLeftMouseDown = false;
-      if (window.soundEngine) {
-        window.soundEngine.updateMovement(0);
-      }
     } else if (e.button === 2) {
       isRightMouseDown = false;
+    }
+    if (!isLeftMouseDown && !isRightMouseDown && window.soundEngine) {
+      window.soundEngine.updateMovement(0);
     }
   }
 
@@ -3681,7 +3274,7 @@
     mousePos.x = e.clientX;
     mousePos.y = e.clientY;
 
-    if (!hasUserMovedMouse && isLeftMouseDown) {
+    if (!hasUserMovedMouse && (isLeftMouseDown || isRightMouseDown)) {
       hasUserMovedMouse = true;
       hintOverlay.classList.add('fade-out');
     }
@@ -3690,6 +3283,7 @@
   function onTouchStart(e) {
     if (e.target && e.target.closest('button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"]')) {
       isLeftMouseDown = false;
+      isRightMouseDown = false;
       return;
     }
 
@@ -3698,6 +3292,7 @@
       const ty = e.touches[0].clientY;
 
       isLeftMouseDown = true;
+      isRightMouseDown = true; // On touch screen, single touch moves and cleans
       mousePos.x = tx;
       mousePos.y = ty;
 
@@ -3720,6 +3315,7 @@
 
   function onTouchEnd() {
     isLeftMouseDown = false;
+    isRightMouseDown = false;
     if (window.soundEngine) {
       window.soundEngine.updateMovement(0);
     }
@@ -3770,12 +3366,8 @@
 
     if (e.code === 'Space' || e.key === ' ') {
       e.preventDefault();
-      if (!isSpaceHeld) {
-        isSpaceHeld = true;
-        if (window.soundEngine) {
-          window.soundEngine.resume();
-          window.soundEngine.playStoreBlip();
-        }
+      if (Values.vacuum.stored > 0.0001 && !isPlayerInStation()) {
+        spawnFloatingText('Go to Station to store!', cleanerPos.x, cleanerPos.y - cleanerRadius - 10, '#38bdf8');
       }
     } else if (e.key === 'e' || e.key === 'E' || e.key === 'b' || e.key === 'B') {
       toggleShop();
