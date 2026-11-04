@@ -4,7 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Sweeping Incremental - Dust Cleaner</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23d4a373'/><circle cx='40' cy='42' r='18' fill='%23bc6c25'/><circle cx='62' cy='48' r='14' fill='%2399582a'/><circle cx='50' cy='64' r='16' fill='%236f4e37'/></svg>">
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/animations.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -19,10 +22,10 @@
   <!-- Top Right Dust & Dirt Indicators & Sound Toggle -->
   <header class="hud-top-right">
     <div class="hud-card indicator-card">
-      <img src="Assets/Icons/Dust.png" alt="Dust" class="hud-stat-icon" draggable="false">
+      <img src="assets/icons/Dust.png" alt="Dust" class="hud-stat-icon" draggable="false">
       <span id="dust-indicator" class="stat-text">Dust Cleared: 0.0g [0.0%]</span>
       <div class="dirt-badge" id="dirt-badge" title="Dirt on Screen (Capped at 100g)">
-        <img src="Assets/Icons/Dirt.png" alt="Dirt" class="hud-stat-icon" draggable="false">
+        <img src="assets/icons/Dirt.png" alt="Dirt" class="hud-stat-icon" draggable="false">
         <span id="dirt-indicator" class="dirt-text">Dirt: 0.0 / 100g</span>
       </div>
     </div>
@@ -49,8 +52,8 @@
       <div class="storage-footer">
         <span id="robot-storage-value" class="storage-text">0.00 / 0.50g</span>
         <div class="storage-breakdown">
-          <span class="mini-tag dust-tag"><img src="Assets/Icons/Dust.png" alt="Dust" class="inventory-icon" draggable="false"><span id="robot-dust-text">0.00g</span></span>
-          <span class="mini-tag dirt-tag"><img src="Assets/Icons/Dirt.png" alt="Dirt" class="inventory-icon" draggable="false"><span id="robot-dirt-text">0.00g</span></span>
+          <span class="mini-tag dust-tag"><img src="assets/icons/Dust.png" alt="Dust" class="inventory-icon" draggable="false"><span id="robot-dust-text">0.00g</span></span>
+          <span class="mini-tag dirt-tag"><img src="assets/icons/Dirt.png" alt="Dirt" class="inventory-icon" draggable="false"><span id="robot-dirt-text">0.00g</span></span>
         </div>
       </div>
     </div>
@@ -60,7 +63,7 @@
   <aside class="storage-center-right" id="storage-indicator-container">
     <!-- Dust Storage Card -->
     <div class="storage-card-indicator dust-storage-card" id="storage-dust-card" title="Stored Dust (Infinite)">
-      <div class="storage-indicator-label"><img src="Assets/Icons/Dust.png" alt="Dust" class="storage-header-icon" draggable="false">DUST</div>
+      <div class="storage-indicator-label"><img src="assets/icons/Dust.png" alt="Dust" class="storage-header-icon" draggable="false">DUST</div>
       <div class="storage-indicator-val-row">
         <span id="storage-dust-value" class="storage-value-text">0.0g</span>
       </div>
@@ -68,7 +71,7 @@
 
     <!-- Dirt Storage Card -->
     <div class="storage-card-indicator dirt-storage-card" id="storage-dirt-card" title="Stored Dirt (Infinite)">
-      <div class="storage-indicator-label"><img src="Assets/Icons/Dirt.png" alt="Dirt" class="storage-header-icon" draggable="false">DIRT</div>
+      <div class="storage-indicator-label"><img src="assets/icons/Dirt.png" alt="Dirt" class="storage-header-icon" draggable="false">DIRT</div>
       <div class="storage-indicator-val-row">
         <span id="storage-dirt-value" class="storage-value-text">0.0g</span>
       </div>
@@ -78,11 +81,11 @@
   <!-- Bottom Menu Dock: brown squares with light brown outlines and dust/dirt icons for shops -->
   <nav class="bottom-menu-dock" id="bottom-menu-dock">
     <button id="dust-shop-btn" class="menu-square-btn" title="Dust Shop (E)" aria-label="Dust Shop">
-      <img src="Assets/Icons/Dust.png" alt="Dust Shop" class="menu-btn-icon" draggable="false">
+      <img src="assets/icons/Dust.png" alt="Dust Shop" class="menu-btn-icon" draggable="false">
       <span class="menu-btn-label">DUST</span>
     </button>
-    <button id="dirt-shop-btn" class="menu-square-btn hidden" style="display: none;" title="Dirt Shop" aria-label="Dirt Shop">
-      <img src="Assets/Icons/Dirt.png" alt="Dirt Shop" class="menu-btn-icon" draggable="false">
+    <button id="dirt-shop-btn" class="menu-square-btn hidden" title="Dirt Shop" aria-label="Dirt Shop">
+      <img src="assets/icons/Dirt.png" alt="Dirt Shop" class="menu-btn-icon" draggable="false">
       <span class="menu-btn-label">DIRT</span>
     </button>
   </nav>
@@ -93,7 +96,7 @@
     <div class="vacuum-hub-container" id="vacuum-hub-container">
       <div class="vacuum-hub-glow"></div>
       <div class="vacuum-hub-circle" id="vacuum-hub-circle">
-        <img src="Assets/Icons/B.O.B. Top.png" class="vacuum-hub-img" id="vacuum-hub-img" alt="B.O.B." draggable="false">
+        <img src="assets/icons/B.O.B. Top.png" class="vacuum-hub-img" id="vacuum-hub-img" alt="B.O.B." draggable="false">
       </div>
       <div class="vacuum-hub-rim"></div>
       <div class="vacuum-hub-notch"></div>
@@ -111,7 +114,7 @@
   <div id="hint-overlay" class="hint-overlay">
     <div class="hint-content">
       <div class="mouse-icon">🖱️</div>
-      <span>Hold <strong>Left Click</strong> to move, <strong>Right Click</strong> to vacuum! Go in the <strong>Station</strong> to store!</span>
+      <span>Hold <strong>Left Click</strong> to move, <strong>Right Click</strong> to toggle vacuum! Go in the <strong>Station</strong> to store!</span>
     </div>
   </div>
 
@@ -120,8 +123,6 @@
     <span id="toast-text">✨ 25% Cleaned! Great job!</span>
   </div>
 
-  <script src="values.js"></script>
-  <script src="sound.js"></script>
-  <script src="game.js"></script>
+  <script src="js/bundle.js"></script>
 </body>
 </html>

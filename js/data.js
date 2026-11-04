@@ -3,7 +3,7 @@
  * All core numeric values, capacities, rates, and upgrade configurations in one variable.
  */
 
-var Values = {
+export const Values = {
   // Infinite Main Storage
   storage: {
     max: Infinity,
@@ -597,3 +597,7 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Values;
 }
+
+export const SAVE_KEY = 'sweeping_incremental_save';
+
+export const MILESTONES = [25, 50, 75, 90, 100];

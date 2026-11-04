@@ -2,7 +2,8 @@
  * Procedural Audio Engine for Sweeping Incremental
  * Generates vacuum hum, brush sweeping whoosh, and milestone chimes via Web Audio API.
  */
-class SoundEngine {
+
+export class SoundEngine {
   constructor() {
     this.ctx = null;
     this.isMuted = false;
@@ -348,4 +349,8 @@ class SoundEngine {
   }
 }
 
-window.soundEngine = new SoundEngine();
+export const soundEngine = new SoundEngine();
+
+if (typeof window !== 'undefined') {
+  window.soundEngine = soundEngine;
+}

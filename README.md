@@ -2,6 +2,20 @@
 
 A minimalist, satisfying browser cleaning game built with WebGL and procedural shaders.
 
+## 🚀 How to Run
+
+### Direct Play (No server needed!)
+Simply **double-click `index.html`** or drag it into your browser. It runs directly from your local filesystem without requiring any server, terminal, or dependencies.
+
+### Optional: Local Web Server
+If you prefer running through a local web server:
+```bash
+npm start
+```
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
 ## ✨ Features
 - **Hold-to-Move**: The vacuum moves **only while Left-Click is held down** (or touch on mobile).
 - **Movement Locked While Storing**: You **cannot move while storing** dust into the storage tank. Releasing Space resumes movement.

@@ -1,0 +1,196 @@
+/* ==========================================================================
+   Sweeping Incremental - Animations, Transitions & Interactive States
+   ========================================================================== */
+
+/* Hover & Active Transitions for HUD & Storage Panels */
+.hud-top-right:hover {
+  opacity: 1;
+}
+
+.robot-storage-sidebar:hover {
+  opacity: 1;
+}
+
+.storage-center-right:hover {
+  opacity: 1;
+}
+
+.dust-storage-card:hover {
+  background: rgba(44, 34, 28, 0.92);
+  border-color: rgba(209, 213, 219, 0.6);
+  transform: scale(1.03);
+}
+
+.dust-storage-card.receiving {
+  border-color: rgba(209, 213, 219, 0.95);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(156, 163, 175, 0.5);
+  transform: scale(1.05);
+}
+
+.dirt-storage-card:hover {
+  background: rgba(48, 28, 22, 0.92);
+  border-color: rgba(235, 150, 125, 0.7);
+  transform: scale(1.03);
+}
+
+.dirt-storage-card.receiving {
+  border-color: rgba(235, 150, 125, 0.95);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 16px rgba(184, 98, 74, 0.55);
+  transform: scale(1.05);
+}
+
+.dust-storage-card.receiving .storage-value-text {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(229, 231, 235, 0.6);
+}
+
+.dirt-storage-card.receiving .storage-value-text {
+  color: #fed7aa;
+  text-shadow: 0 0 10px rgba(247, 178, 160, 0.6);
+}
+
+/* Menu Dock Button Hover & Active States */
+.menu-square-btn:hover {
+  background: #52331f;
+  border-color: #c48c5c;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+
+.menu-square-btn:active {
+  transform: translateY(1px);
+}
+
+.menu-square-btn:hover .menu-btn-icon,
+.menu-square-btn.active-shop .menu-btn-icon {
+  transform: scale(1.15);
+}
+
+/* Shop Tray & Vacuum Hub Transitions */
+.shop-cards-tray.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vacuum-hub-container,
+.carousel-cards-viewport {
+  transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+}
+
+.shop-cards-tray.hidden .vacuum-hub-container,
+.shop-cards-tray.hidden .carousel-cards-viewport {
+  transform: translateY(120%);
+  opacity: 0;
+}
+
+.vacuum-hub-container:active {
+  cursor: grabbing;
+}
+
+/* Carousel Navigation Hover & Active States */
+.carousel-nav-btn:hover {
+  background: rgba(55, 36, 24, 0.95);
+  border-color: #ffd080;
+  transform: scale(1.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 14px rgba(255, 208, 128, 0.45);
+}
+
+.carousel-nav-btn:active {
+  transform: scale(0.96);
+}
+
+body.dirt-shop-active .carousel-nav-btn:hover {
+  border-color: #f69466;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 14px rgba(246, 148, 102, 0.45);
+}
+
+.carousel-scroll-hint.faded {
+  opacity: 0;
+}
+
+/* Upgrade Card Hover, Focus & Active Effects */
+.upgrade-card:not(.is-middle-card):hover {
+  filter: brightness(1.1) drop-shadow(0 10px 22px rgba(0, 0, 0, 0.8));
+  z-index: 90 !important;
+}
+
+.upgrade-card:focus-visible .card-inner {
+  transform: translateY(-8px) scale(1.04);
+  filter: drop-shadow(0 16px 28px rgba(0, 0, 0, 0.8));
+}
+
+.upgrade-card:active .card-inner {
+  transform: translateY(-3px) scale(0.99) !important;
+}
+
+.upgrade-card:hover .card-img,
+.upgrade-card:focus-visible .card-img {
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.8)) brightness(1.06);
+}
+
+.upgrade-card:hover .card-top-bar,
+.upgrade-card:focus-visible .card-top-bar {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.upgrade-card:hover .card-price-val,
+.upgrade-card:focus-visible .card-price-val {
+  transform: scale(1.08);
+}
+
+/* Card Purchase / Shake Keyframes & Animations */
+@keyframes cardPurchased {
+  0% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-16px) scale(1.12); filter: drop-shadow(0 0 25px rgba(123, 241, 168, 0.9)) brightness(1.2); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes cardShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+.upgrade-card.purchased-anim .card-inner,
+.card-inner.purchased-anim {
+  animation: cardPurchased 0.35s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.upgrade-card.shake-anim .card-inner,
+.card-inner.shake-anim {
+  animation: cardShake 0.35s ease;
+}
+
+/* Action Icon Button Hover & Active States */
+.icon-btn:hover {
+  background: rgba(55, 40, 30, 0.9);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.icon-btn:active {
+  transform: translateY(1px);
+}
+
+#reset-btn:hover {
+  border-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.25);
+  background: rgba(55, 30, 30, 0.9);
+}
+
+#reset-btn:hover #reset-icon {
+  transform: rotate(-45deg);
+}
+
+/* Hint & Toast Visibility Transitions */
+.hint-overlay.fade-out {
+  opacity: 0;
+  transform: translate(-50%, -10px);
+}
+
+.toast.hidden {
+  opacity: 0;
+  transform: translate(-50%, 15px);
+}

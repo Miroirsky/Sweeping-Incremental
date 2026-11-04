@@ -1,0 +1,9 @@
+{
+  "name": "sweeping-incremental",
+  "version": "1.0.0",
+  "description": "Sweeping Incremental game",
+  "scripts": {
+    "build": "node build.js",
+    "start": "node server.js"
+  }
+}
