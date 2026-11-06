@@ -110,7 +110,7 @@ export function generateInstantDirt(onUpdateUI) {
   let attempts = 0;
   let anyDirtAdded = false;
 
-  while (state.currentScreenDirtGrams < maxDirt - 0.2 && attempts < 45) {
+  while (state.currentScreenDirtGrams < maxDirt - 0.2 && attempts < 95) {
     attempts++;
 
     let bestX = -1;
@@ -442,9 +442,11 @@ export function updateAutoCleanersSimulation(dt, now, onUpdateUI) {
         bot.storedDirt = Math.max(0, (bot.storedDirt || 0) - dirtAmount);
         bot.stored = Math.max(0, (bot.storedDust || 0) + (bot.storedDirt || 0));
 
-        const dustMult = Values.getEffectiveDustMultiplier ? Values.getEffectiveDustMultiplier() : 1.0;
+        const storeMult = Values.getStoringResourceMultiplier ? Values.getStoringResourceMultiplier() : 1.0;
+        const dustMult = (Values.getEffectiveDustMultiplier ? Values.getEffectiveDustMultiplier() : 1.0) * storeMult;
+        const dirtMult = storeMult;
         Values.storage.dust = (Values.storage.dust || 0) + dustAmount * dustMult;
-        Values.storage.dirt = (Values.storage.dirt || 0) + dirtAmount;
+        Values.storage.dirt = (Values.storage.dirt || 0) + dirtAmount * dirtMult;
 
         if (typeof onUpdateUI === 'function') onUpdateUI();
 
@@ -651,6 +653,10 @@ export function updateAutoCleanersSimulation(dt, now, onUpdateUI) {
           if (botDustGained > 0) state.stats.totalDustCollected += botDustGained;
           if (botDirtGained > 0) state.stats.totalDirtCleaned += botDirtGained;
         }
+        if (state.currentPrestigeStats) {
+          if (botDustGained > 0) state.currentPrestigeStats.totalDustCollected += botDustGained;
+          if (botDirtGained > 0) state.currentPrestigeStats.totalDirtCleaned += botDirtGained;
+        }
         if (botDustGained > 0) {
           state.currentScreenDustGrams = Math.max(0, state.currentScreenDustGrams - botDustGained);
         }
@@ -710,6 +716,9 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
   if (state.stats) {
     state.stats.totalTimePlayed += dt;
   }
+  if (state.currentPrestigeStats) {
+    state.currentPrestigeStats.totalTimePlayed = (state.currentPrestigeStats.totalTimePlayed || 0) + dt;
+  }
 
   const maxCapacity = getMaxVacuumCapacity();
   const isVacuumFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
@@ -734,13 +743,20 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
     Values.vacuum.storedDirt = Math.max(0, (Values.vacuum.storedDirt || 0) - transferDirt);
     Values.vacuum.stored = Values.vacuum.storedDust + Values.vacuum.storedDirt;
 
-    const dustMult = Values.getEffectiveDustMultiplier ? Values.getEffectiveDustMultiplier() : 1.0;
+    const storeMult = Values.getStoringResourceMultiplier ? Values.getStoringResourceMultiplier() : 1.0;
+    const dustMult = (Values.getEffectiveDustMultiplier ? Values.getEffectiveDustMultiplier() : 1.0) * storeMult;
+    const dirtMult = storeMult;
     Values.storage.dust = (Values.storage.dust || 0) + transferDust * dustMult;
-    Values.storage.dirt = (Values.storage.dirt || 0) + transferDirt;
+    Values.storage.dirt = (Values.storage.dirt || 0) + transferDirt * dirtMult;
 
     if (Values.vacuum.stored < 0.0001) {
-      if (transferTotal > 0.001 && state.stats) {
-        state.stats.totalStationUnloads = (state.stats.totalStationUnloads || 0) + 1;
+      if (transferTotal > 0.001) {
+        if (state.stats) {
+          state.stats.totalStationUnloads = (state.stats.totalStationUnloads || 0) + 1;
+        }
+        if (state.currentPrestigeStats) {
+          state.currentPrestigeStats.totalStationUnloads = (state.currentPrestigeStats.totalStationUnloads || 0) + 1;
+        }
       }
       Values.vacuum.stored = 0.0;
       Values.vacuum.storedDust = 0.0;
@@ -784,6 +800,9 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
 
       if (state.stats) {
         state.stats.totalDistanceTraveled += Math.hypot(cleanerPos.x - prevCleanerPos.x, cleanerPos.y - prevCleanerPos.y);
+      }
+      if (state.currentPrestigeStats) {
+        state.currentPrestigeStats.totalDistanceTraveled = (state.currentPrestigeStats.totalDistanceTraveled || 0) + Math.hypot(cleanerPos.x - prevCleanerPos.x, cleanerPos.y - prevCleanerPos.y);
       }
 
       if (distToMouse > 1.0) {
@@ -863,6 +882,10 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
         if (state.stats) {
           if (dustGained > 0) state.stats.totalDustCollected += dustGained;
           if (dirtCleanedGrams > 0) state.stats.totalDirtCleaned += dirtCleanedGrams;
+        }
+        if (state.currentPrestigeStats) {
+          if (dustGained > 0) state.currentPrestigeStats.totalDustCollected += dustGained;
+          if (dirtCleanedGrams > 0) state.currentPrestigeStats.totalDirtCleaned += dirtCleanedGrams;
         }
         if (dustGained > 0) {
           state.currentScreenDustGrams = Math.max(0, state.currentScreenDustGrams - dustGained);
@@ -952,3 +975,6 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
   // Autonomous Mini Cleaners simulation (wandering & vacuuming)
   updateAutoCleanersSimulation(dt, now, onUpdateUI);
 }
+
+Values.updatePlayerAndRoomSimulation = updatePlayerAndRoomSimulation;
+Values.updateAutoCleanersSimulation = updateAutoCleanersSimulation;

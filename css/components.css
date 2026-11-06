@@ -1217,3 +1217,493 @@ body.dirt-shop-active .upgrade-card.is-middle-card .card-img {
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
 }
+
+/* ==========================================================================
+   Prestige System & Full-Screen Black Prestige Tree Interface
+   ========================================================================== */
+
+.pp-storage-card {
+  border-color: rgba(168, 85, 247, 0.55);
+}
+
+.pp-storage-card.hidden {
+  display: none !important;
+}
+
+.pp-storage-card .storage-value-text {
+  color: #d8b4fe;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.45);
+}
+
+#prestige-dock-btn.hidden {
+  display: none !important;
+}
+
+.prestige-dock-btn {
+  background: #2b143d;
+  border-color: #a855f7;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 14px rgba(168, 85, 247, 0.3);
+}
+
+.prestige-dock-btn:hover {
+  background: #3b1c54 !important;
+  border-color: #c084fc !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6), 0 0 20px rgba(168, 85, 247, 0.55) !important;
+}
+
+.menu-btn-emoji {
+  font-size: 22px;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.menu-btn-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #f5ede6;
+}
+
+/* Full-screen black interface */
+.prestige-tree-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #000000;
+  z-index: 250;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.prestige-tree-overlay:active {
+  cursor: grabbing;
+}
+
+.prestige-tree-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Top Bar: Prestige Tree Title & Available PP */
+.prestige-top-bar {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 32px;
+  pointer-events: none;
+}
+
+.prestige-tree-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #ffffff;
+  text-shadow: 0 0 16px rgba(168, 85, 247, 0.6);
+  margin: 0;
+  pointer-events: auto;
+}
+
+.prestige-pp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(24, 10, 38, 0.92);
+  border: 1.5px solid #a855f7;
+  border-radius: 14px;
+  padding: 10px 20px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7), 0 0 18px rgba(168, 85, 247, 0.35);
+  pointer-events: auto;
+}
+
+.prestige-pp-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e9d5ff;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.prestige-pp-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px rgba(192, 132, 252, 0.8);
+}
+
+/* Tree Canvas & Layers */
+.prestige-tree-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  will-change: transform;
+}
+
+.prestige-links-layer,
+.prestige-nodes-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* White connecting bars (2x node diameter) between prerequisites and dependent upgrades */
+.prestige-connector-bar {
+  position: absolute;
+  height: 5px;
+  background: #ffffff;
+  transform-origin: 0 50%;
+  border-radius: 3px;
+  opacity: 0.45;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.35);
+  transition: opacity 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease;
+  z-index: 1;
+}
+
+.prestige-connector-bar.bar-unlocked {
+  opacity: 0.82;
+  background: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+}
+
+.prestige-connector-bar.bar-purchased {
+  opacity: 1;
+  background: #ffffff;
+  box-shadow: 0 0 16px rgba(192, 132, 252, 0.9), 0 0 6px #ffffff;
+}
+
+/* Circular Upgrade Nodes & White Titles Over Them */
+.prestige-node-wrapper {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.prestige-node-title {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  text-align: center;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95), 0 0 10px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+.prestige-node {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #121018;
+  border: 3px solid rgba(255, 255, 255, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+  pointer-events: auto;
+  padding: 0;
+  outline: none;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.85);
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.prestige-node.is-dragging {
+  cursor: grabbing;
+  transform: scale(1.16);
+}
+
+.prestige-node:hover,
+.prestige-node:focus-visible {
+  transform: scale(1.12);
+}
+
+.prestige-node.is-purchased {
+  background: radial-gradient(circle at 35% 30%, #4c1d95, #1e0b36);
+  border-color: #c084fc;
+  box-shadow: 0 0 22px rgba(168, 85, 247, 0.75), inset 0 0 12px rgba(192, 132, 252, 0.4);
+}
+
+.prestige-node.is-available {
+  background: radial-gradient(circle at 35% 30%, #2a1842, #110c1a);
+  border-color: #ffffff;
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.55), 0 0 26px rgba(168, 85, 247, 0.45);
+}
+
+.prestige-node.is-unaffordable {
+  background: #14111a;
+  border-color: rgba(255, 255, 255, 0.45);
+  opacity: 0.85;
+}
+
+.prestige-node.is-locked {
+  background: #0b0a0e;
+  border-color: rgba(255, 255, 255, 0.22);
+  opacity: 0.55;
+  filter: grayscale(0.6);
+}
+
+.prestige-node-img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.75));
+}
+
+.prestige-node-emoji {
+  font-size: 32px;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.75));
+}
+
+.prestige-node-level-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: #191226;
+  border: 1.5px solid #c084fc;
+  border-radius: 9px;
+  color: #f3e8ff;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 1px 5px;
+  line-height: 1.25;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.prestige-node-level-badge.is-maxed {
+  background: #581c87;
+  border-color: #f3e8ff;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(192, 132, 252, 0.85);
+}
+
+@keyframes nodePurchasePulse {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.26); box-shadow: 0 0 36px rgba(192, 132, 252, 1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes nodeDeniedShake {
+  0%, 100% { transform: translateX(0); }
+  25%, 75% { transform: translateX(-6px); }
+  50% { transform: translateX(6px); }
+}
+
+.prestige-node.node-purchased-anim {
+  animation: nodePurchasePulse 0.38s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.prestige-node.node-shake {
+  animation: nodeDeniedShake 0.32s ease;
+}
+
+/* Hover Tooltip for Nodes */
+.prestige-node-tooltip {
+  position: fixed;
+  transform: translateX(-50%);
+  width: 260px;
+  background: rgba(16, 12, 24, 0.96);
+  border: 1.5px solid rgba(192, 132, 252, 0.65);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.85), 0 0 20px rgba(168, 85, 247, 0.3);
+  color: #ffffff;
+  z-index: 300;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: opacity 0.15s ease;
+}
+
+.prestige-node-tooltip.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.prestige-tooltip-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding-bottom: 5px;
+}
+
+.prestige-tooltip-desc {
+  font-size: 12.5px;
+  color: #e2e8f0;
+  line-height: 1.4;
+}
+
+.prestige-tooltip-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+}
+
+.prestige-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prestige-tooltip-label {
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.prestige-tooltip-cost {
+  font-weight: 700;
+}
+
+.prestige-tooltip-cost.text-affordable {
+  color: #86efac;
+}
+
+.prestige-tooltip-cost.text-unaffordable {
+  color: #fca5a5;
+}
+
+.prestige-tooltip-cost.text-owned {
+  color: #d8b4fe;
+}
+
+.prestige-tooltip-reqs .req-met {
+  color: #86efac;
+  font-weight: 600;
+}
+
+.prestige-tooltip-reqs .req-missing {
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.prestige-tooltip-status {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.prestige-tooltip-status.status-owned {
+  background: rgba(168, 85, 247, 0.25);
+  color: #e9d5ff;
+}
+
+.prestige-tooltip-status.status-available {
+  background: rgba(74, 222, 128, 0.2);
+  color: #86efac;
+}
+
+.prestige-tooltip-status.status-unaffordable,
+.prestige-tooltip-status.status-locked {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+/* Bottom-Right Actions: Purple Prestige Button next to Cancel */
+.prestige-bottom-actions {
+  position: fixed;
+  bottom: 28px;
+  right: 32px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+.prestige-btn-purple {
+  background: linear-gradient(135deg, #9333ea, #6b21a8);
+  border: 2px solid #c084fc;
+  border-radius: 12px;
+  padding: 12px 24px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 8px 25px rgba(147, 51, 234, 0.5), 0 0 16px rgba(192, 132, 252, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.prestige-btn-purple:hover {
+  background: linear-gradient(135deg, #a855f7, #7e22ce);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(147, 51, 234, 0.7), 0 0 22px rgba(192, 132, 252, 0.6);
+}
+
+.prestige-btn-purple:active {
+  transform: translateY(1px);
+}
+
+.prestige-btn-purple:disabled,
+.prestige-btn-purple.disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  background: #311847 !important;
+  border-color: #6b21a8 !important;
+  color: #c4b5fd !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.prestige-btn-cancel {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
+  padding: 12px 22px;
+  color: #f1f5f9;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.prestige-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #ffffff;
+  color: #ffffff;
+  transform: translateY(-2px);
+}
+
+.prestige-btn-cancel:active {
+  transform: translateY(1px);
+}

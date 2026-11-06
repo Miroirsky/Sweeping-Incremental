@@ -67,6 +67,31 @@ export function saveGame() {
         totalTimePlayed: Number(state.stats ? state.stats.totalTimePlayed : 0) || 0,
         totalStationUnloads: Number(state.stats ? state.stats.totalStationUnloads : 0) || 0,
         totalClicks: Number(state.stats ? state.stats.totalClicks : 0) || 0
+      },
+      lifetimeStats: {
+        totalDustCollected: Number(state.stats ? state.stats.totalDustCollected : 0) || 0,
+        totalDirtCleaned: Number(state.stats ? state.stats.totalDirtCleaned : 0) || 0,
+        totalDistanceTraveled: Number(state.stats ? state.stats.totalDistanceTraveled : 0) || 0,
+        totalTimePlayed: Number(state.stats ? state.stats.totalTimePlayed : 0) || 0,
+        totalStationUnloads: Number(state.stats ? state.stats.totalStationUnloads : 0) || 0,
+        totalClicks: Number(state.stats ? state.stats.totalClicks : 0) || 0
+      },
+      currentPrestigeStats: {
+        totalDirtCleaned: Number(state.currentPrestigeStats ? state.currentPrestigeStats.totalDirtCleaned : 0) || 0,
+        totalDustCollected: Number(state.currentPrestigeStats ? state.currentPrestigeStats.totalDustCollected : 0) || 0,
+        totalDistanceTraveled: Number(state.currentPrestigeStats ? state.currentPrestigeStats.totalDistanceTraveled : 0) || 0,
+        totalTimePlayed: Number(state.currentPrestigeStats ? state.currentPrestigeStats.totalTimePlayed : 0) || 0,
+        totalStationUnloads: Number(state.currentPrestigeStats ? state.currentPrestigeStats.totalStationUnloads : 0) || 0,
+        totalClicks: Number(state.currentPrestigeStats ? state.currentPrestigeStats.totalClicks : 0) || 0
+      },
+      prestige: {
+        unlocked: !!(state.prestige && state.prestige.unlocked),
+        pp: Number(state.prestige ? state.prestige.pp : 0) || 0,
+        totalPP: Number(state.prestige ? state.prestige.totalPP : 0) || 0,
+        count: Number(state.prestige ? state.prestige.count : 0) || 0,
+        justPrestiged: !!(state.prestige && state.prestige.justPrestiged),
+        purchased: state.prestige && state.prestige.purchased ? Array.from(state.prestige.purchased) : [],
+        upgradeLevels: state.prestige && state.prestige.upgradeLevels ? { ...state.prestige.upgradeLevels } : {}
       }
     };
 
@@ -141,14 +166,66 @@ export function loadGame() {
       if (dom.volumeVal) dom.volumeVal.textContent = `${dom.volumeSlider.value}%`;
     }
 
-    // Restore statistics
-    if (data.stats && state.stats) {
-      state.stats.totalDustCollected = Math.max(0, Number(data.stats.totalDustCollected) || 0);
-      state.stats.totalDirtCleaned = Math.max(0, Number(data.stats.totalDirtCleaned) || 0);
-      state.stats.totalDistanceTraveled = Math.max(0, Number(data.stats.totalDistanceTraveled) || 0);
-      state.stats.totalTimePlayed = Math.max(0, Number(data.stats.totalTimePlayed) || 0);
-      state.stats.totalStationUnloads = Math.max(0, Number(data.stats.totalStationUnloads) || 0);
-      state.stats.totalClicks = Math.max(0, Number(data.stats.totalClicks) || 0);
+    // Restore lifetime statistics
+    const lifetimeSrc = data.lifetimeStats || data.stats;
+    if (lifetimeSrc && state.stats) {
+      state.stats.totalDustCollected = Math.max(0, Number(lifetimeSrc.totalDustCollected) || 0);
+      state.stats.totalDirtCleaned = Math.max(0, Number(lifetimeSrc.totalDirtCleaned) || 0);
+      state.stats.totalDistanceTraveled = Math.max(0, Number(lifetimeSrc.totalDistanceTraveled) || 0);
+      state.stats.totalTimePlayed = Math.max(0, Number(lifetimeSrc.totalTimePlayed) || 0);
+      state.stats.totalStationUnloads = Math.max(0, Number(lifetimeSrc.totalStationUnloads) || 0);
+      state.stats.totalClicks = Math.max(0, Number(lifetimeSrc.totalClicks) || 0);
+    }
+
+    // Restore current prestige statistics separately
+    if (!state.currentPrestigeStats) {
+      state.currentPrestigeStats = {
+        totalDirtCleaned: 0.0,
+        totalDustCollected: 0.0,
+        totalDistanceTraveled: 0.0,
+        totalTimePlayed: 0.0,
+        totalStationUnloads: 0,
+        totalClicks: 0
+      };
+    }
+    if (data.currentPrestigeStats) {
+      state.currentPrestigeStats.totalDirtCleaned = Math.max(0, Number(data.currentPrestigeStats.totalDirtCleaned) || 0);
+      state.currentPrestigeStats.totalDustCollected = Math.max(0, Number(data.currentPrestigeStats.totalDustCollected) || 0);
+      state.currentPrestigeStats.totalDistanceTraveled = Math.max(0, Number(data.currentPrestigeStats.totalDistanceTraveled) || 0);
+      state.currentPrestigeStats.totalTimePlayed = Math.max(0, Number(data.currentPrestigeStats.totalTimePlayed) || 0);
+      state.currentPrestigeStats.totalStationUnloads = Math.max(0, Number(data.currentPrestigeStats.totalStationUnloads) || 0);
+      state.currentPrestigeStats.totalClicks = Math.max(0, Number(data.currentPrestigeStats.totalClicks) || 0);
+    } else {
+      if (data.prestige && data.prestige.count > 0) {
+        state.currentPrestigeStats.totalDirtCleaned = Math.max(0, Number(data.storage && data.storage.dirt) || 0);
+        state.currentPrestigeStats.totalDustCollected = Math.max(0, Number(data.storage && data.storage.dust) || 0);
+      } else {
+        state.currentPrestigeStats.totalDirtCleaned = state.stats.totalDirtCleaned;
+        state.currentPrestigeStats.totalDustCollected = state.stats.totalDustCollected;
+      }
+    }
+
+    // Restore prestige state & apply purchased prestige upgrade effects
+    if (state.prestige) {
+      if (data.prestige) {
+        state.prestige.unlocked = !!data.prestige.unlocked;
+        state.prestige.pp = Math.max(0, Number(data.prestige.pp) || 0);
+        state.prestige.totalPP = Math.max(0, Number(data.prestige.totalPP) || 0);
+        state.prestige.count = Math.max(0, Number(data.prestige.count) || 0);
+        state.prestige.justPrestiged = !!data.prestige.justPrestiged;
+        state.prestige.purchased = new Set(Array.isArray(data.prestige.purchased) ? data.prestige.purchased : []);
+        state.prestige.upgradeLevels = (data.prestige.upgradeLevels && typeof data.prestige.upgradeLevels === 'object')
+          ? { ...data.prestige.upgradeLevels }
+          : {};
+        for (const pid of state.prestige.purchased) {
+          if (!state.prestige.upgradeLevels[pid]) {
+            state.prestige.upgradeLevels[pid] = 1;
+          }
+        }
+      }
+      if (typeof Values.applyPrestigeEffects === 'function') {
+        Values.applyPrestigeEffects();
+      }
     }
 
     return true;
@@ -182,6 +259,29 @@ export function resetGame() {
     state.stats.totalTimePlayed = 0.0;
     state.stats.totalStationUnloads = 0;
     state.stats.totalClicks = 0;
+  }
+  if (state.currentPrestigeStats) {
+    state.currentPrestigeStats.totalDirtCleaned = 0.0;
+    state.currentPrestigeStats.totalDustCollected = 0.0;
+    state.currentPrestigeStats.totalDistanceTraveled = 0.0;
+    state.currentPrestigeStats.totalTimePlayed = 0.0;
+    state.currentPrestigeStats.totalStationUnloads = 0;
+    state.currentPrestigeStats.totalClicks = 0;
+  }
+  if (state.prestige) {
+    state.prestige.unlocked = false;
+    state.prestige.pp = 0;
+    state.prestige.totalPP = 0;
+    state.prestige.count = 0;
+    state.prestige.justPrestiged = false;
+    if (state.prestige.purchased) state.prestige.purchased.clear();
+    state.prestige.upgradeLevels = {};
+  }
+  if (typeof Values.applyPrestigeEffects === 'function') {
+    Values.applyPrestigeEffects();
+  }
+  if (typeof Values.closePrestigeTree === 'function') {
+    Values.closePrestigeTree();
   }
   state.particles.length = 0;
   state.transferParticles.length = 0;

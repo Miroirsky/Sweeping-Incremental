@@ -3,6 +3,7 @@ const path = require('path');
 
 const files = [
   'data.js',
+  'prestigeData.js',
   'sound.js',
   'state.js',
   'particles.js',
@@ -10,6 +11,7 @@ const files = [
   'simulation.js',
   'ui.js',
   'settings.js',
+  'prestige.js',
   'main.js'
 ];
 

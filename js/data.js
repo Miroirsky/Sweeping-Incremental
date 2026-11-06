@@ -58,7 +58,8 @@ export const Values = {
   room: {
     gridRes: 1000,        // Grid resolution (100 x 100 pixels = 10,000 pixels)
     dustCapacity: 1000,  // Full room total dust capacity in grams (1 Kg = 1000g)
-    dirtCapacity: 10,   // Full room max dirt on screen in grams (100g)
+    baseDirtCapacity: 10, // Default base room max dirt on screen in grams (10g)
+    dirtCapacity: 10,   // Full room max dirt on screen in grams (10g base, 25g with Dirty prestige upgrade)
     dustReappearDelay: 10000, // Time in ms before cleaned dust starts reappearing (10s)
     dustFadeDuration: 1200,   // Smooth reappear fade duration in ms (1.2s)
 
@@ -194,15 +195,17 @@ export const Values = {
         mult: 1.5,
         level: 0,
         getDesc(upg) {
+          const maxD = Values.getMaxDirt ? Values.getMaxDirt() : 10;
           return upg.level === 0
-            ? "Unlocks organic dirt zones up to 100g"
-            : "Organic dirt zones active (generates up to 100g)";
+            ? `Unlocks organic dirt zones up to ${maxD}g`
+            : `Organic dirt zones active (generates up to ${maxD}g)`;
         },
         getEffect(upg) {
           return upg.level === 0 ? "Unlock Dirt" : "Dirt Active";
         },
         getStat(upg) {
-          return upg.level === 0 ? "Locked" : "100g Max";
+          const maxD = Values.getMaxDirt ? Values.getMaxDirt() : 10;
+          return upg.level === 0 ? "Locked" : `${maxD}g Max`;
         }
       },
       autoCleaner: {
@@ -346,14 +349,45 @@ export const Values = {
     }
   },
 
+  // Active Prestige Upgrade Effects Cache
+  prestigeEffects: {
+    unlockTree: false,
+    maxRoomDirt: null,
+    addRoomDirt: 0,
+    startingDust: 0,
+    startingDirt: 0,
+    storingResourceBonus: 0,
+    dustMultiplier: 0,
+    dustDensityMultiplier: 0,
+    cleanRateMultiplier: 0,
+    speedMultiplier: 0,
+    capacityMultiplier: 0,
+    storeRateMultiplier: 0,
+    sizeMultiplier: 0,
+    autoCleanRateMultiplier: 0,
+    autoSpeedMultiplier: 0,
+    autoCapacityMultiplier: 0,
+    freeAutoCleaners: 0,
+    ppMultiplier: 0
+  },
+
   // --- Dynamic Multiplier & Calculation Helpers ---
 
-  // Total active auto cleaners across both Dust Shop and Dirt Shop (up to 3 + 3 = 6 bots!)
+  // Total active auto cleaners across both Dust Shop and Dirt Shop (plus any prestige bonus bots)
   getTotalAutoCleanersCount() {
     const dustUpg = this.shops.dustShop && (this.shops.dustShop.autoCleaner || this.shops.dustShop['Auto Cleaner']);
     const dirtUpg = this.shops.dirtShop && (this.shops.dirtShop.autoCleaner || this.shops.dirtShop['Auto Cleaner']);
-    const count = (dustUpg ? dustUpg.level : 0) + (dirtUpg ? dirtUpg.level : 0);
+    const bonusBots = (this.prestigeEffects && this.prestigeEffects.freeAutoCleaners) ? this.prestigeEffects.freeAutoCleaners : 0;
+    const count = (dustUpg ? dustUpg.level : 0) + (dirtUpg ? dirtUpg.level : 0) + bonusBots;
     return count;
+  },
+
+  // Effective multiplier for dust and dirt gained on storing (e.g. Richer prestige upgrade: +50% per level)
+  getStoringResourceMultiplier() {
+    const bonus = (this.prestigeEffects && typeof this.prestigeEffects.storingResourceBonus === 'number')
+      ? this.prestigeEffects.storingResourceBonus
+      : 0;
+    return Math.max(1.0, 1.0 + bonus);
   },
 
   // Effective dust multiplier applied when storing/selling dust (1.0 + level * 0.50)
@@ -361,7 +395,8 @@ export const Values = {
     const upg = (this.shops.dirtShop && (this.shops.dirtShop.moreDust || this.shops.dirtShop.MoreDust)) ||
                 (this.shops.dustShop && (this.shops.dustShop.moreDust || this.shops.dustShop.MoreDust));
     const effect = (upg && upg.dustMultEffect != null) ? upg.dustMultEffect : 0.5;
-    const multiplier = 1.0 + (upg ? (upg.level * effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.dustMultiplier) ? this.prestigeEffects.dustMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * effect) : 0)) * (1.0 + prestigeBonus);
     return multiplier;
   },
 
@@ -370,7 +405,8 @@ export const Values = {
     const upg = (this.shops.dirtShop && (this.shops.dirtShop.moreDust || this.shops.dirtShop.MoreDust)) ||
                 (this.shops.dustShop && (this.shops.dustShop.moreDust || this.shops.dustShop.MoreDust));
     const effect = (upg && upg.dustDensityEffect != null) ? upg.dustDensityEffect : 0.3;
-    const multiplier = 1.0 + (upg ? (upg.level * effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.dustDensityMultiplier) ? this.prestigeEffects.dustDensityMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * effect) : 0)) * (1.0 + prestigeBonus);
     return multiplier;
   },
 
@@ -383,14 +419,16 @@ export const Values = {
   // Effective vacuum movement speed ratio (e.g. 0.01 * (1 + level * 0.5))
   getEffectiveSpeed() {
     const upg = this.shops.dustShop.speed || this.shops.dustShop.Speed;
-    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.speedMultiplier) ? this.prestigeEffects.speedMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * upg.effect) : 0)) * (1.0 + prestigeBonus);
     return this.vacuum.speed * multiplier;
   },
 
   // Effective cleaning rate in g/s distributed across pixels under vacuum
   getEffectiveCleanRate() {
     const upg = this.shops.dustShop.efficiency || this.shops.dustShop.CleanRate || this.shops.dustShop.Efficiency;
-    const multiplier = upg ? (1.0 + (upg.level * upg.effect)) : 1.0;
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.cleanRateMultiplier) ? this.prestigeEffects.cleanRateMultiplier : 0;
+    const multiplier = (upg ? (1.0 + (upg.level * upg.effect)) : 1.0) * (1.0 + prestigeBonus);
     return (this.vacuum.cleanRate != null ? this.vacuum.cleanRate : 0.1) * multiplier;
   },
 
@@ -398,7 +436,8 @@ export const Values = {
   getEffectiveAutoVacuumCleanRate() {
     const upg = (this.shops.dirtShop && (this.shops.dirtShop.autoEfficiency || this.shops.dirtShop.AutoEfficiency)) ||
                 (this.shops.dustShop && (this.shops.dustShop.autoEfficiency || this.shops.dustShop.AutoEfficiency));
-    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.autoCleanRateMultiplier) ? this.prestigeEffects.autoCleanRateMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * upg.effect) : 0)) * (1.0 + prestigeBonus);
     const baseRate = (this.autoVacuum && this.autoVacuum.cleanRate != null) ? this.autoVacuum.cleanRate : 0.1;
     return baseRate * multiplier;
   },
@@ -407,7 +446,8 @@ export const Values = {
   getEffectiveAutoVacuumCapacity() {
     const upg = (this.shops.dirtShop && (this.shops.dirtShop.autoCapacity || this.shops.dirtShop.AutoCapacity)) ||
                 (this.shops.dustShop && (this.shops.dustShop.autoCapacity || this.shops.dustShop.AutoCapacity));
-    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.autoCapacityMultiplier) ? this.prestigeEffects.autoCapacityMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * upg.effect) : 0)) * (1.0 + prestigeBonus);
     const baseCap = (this.autoVacuum && this.autoVacuum.capacity != null) ? this.autoVacuum.capacity : 1.0;
     return baseCap * multiplier;
   },
@@ -416,7 +456,8 @@ export const Values = {
   getEffectiveAutoVacuumSpeed() {
     const upg = (this.shops.dirtShop && (this.shops.dirtShop.autoSpeed || this.shops.dirtShop.AutoSpeed)) ||
                 (this.shops.dustShop && (this.shops.dustShop.autoSpeed || this.shops.dustShop.AutoSpeed));
-    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.autoSpeedMultiplier) ? this.prestigeEffects.autoSpeedMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * upg.effect) : 0)) * (1.0 + prestigeBonus);
     const baseSpeed = (this.autoVacuum && this.autoVacuum.speed != null) ? this.autoVacuum.speed : 0.01;
     return baseSpeed * multiplier;
   },
@@ -441,14 +482,16 @@ export const Values = {
   // Effective vacuum capacity in grams (e.g. 0.5 * (1 + level * 0.5))
   getEffectiveCapacity() {
     const upg = this.shops.dustShop.capacity || this.shops.dustShop.Capacity || this.shops.dustShop.CapacityMult;
-    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.capacityMultiplier) ? this.prestigeEffects.capacityMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * upg.effect) : 0)) * (1.0 + prestigeBonus);
     return this.vacuum.capacity * multiplier;
   },
 
   // Effective store rate in g/s (e.g. 100 * (1 + level * 0.5))
   getEffectiveStoreRate() {
     const upg = this.shops.dustShop.storingSpeed || this.shops.dustShop['storing speed'] || this.shops.dustShop.storing_speed || this.shops.dustShop.StoringSpeed;
-    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.storeRateMultiplier) ? this.prestigeEffects.storeRateMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * upg.effect) : 0)) * (1.0 + prestigeBonus);
     return (this.vacuum.storeRate != null ? this.vacuum.storeRate : 1.0) * multiplier;
   },
 
@@ -456,20 +499,30 @@ export const Values = {
   getEffectiveSizeMultiplier() {
     const upg = (this.shops.dirtShop && (this.shops.dirtShop.size || this.shops.dirtShop.Size)) ||
                 (this.shops.dustShop && (this.shops.dustShop.size || this.shops.dustShop.Size));
-    const multiplier = 1.0 + (upg ? (upg.level * upg.effect) : 0);
+    const prestigeBonus = (this.prestigeEffects && this.prestigeEffects.sizeMultiplier) ? this.prestigeEffects.sizeMultiplier : 0;
+    const multiplier = (1.0 + (upg ? (upg.level * upg.effect) : 0)) * (1.0 + prestigeBonus);
     return multiplier;
   },
 
-  // Dirt refill trigger threshold in grams (e.g. 100g * 0.70 = 70g)
+  // Dirt refill trigger threshold in grams (e.g. maxDirt * 0.50)
   getDirtRefillThreshold() {
     const thresholdPct = (this.dirt && this.dirt.refillThresholdPercent != null) ? this.dirt.refillThresholdPercent : 0.70;
-    return this.room.dirtCapacity * thresholdPct;
+    return this.getMaxDirt() * thresholdPct;
   },
 
-  // Max dirt on screen in grams (e.g. 100g * 1.00 = 100g)
+  // Max dirt on screen in grams (10g base, 25g with Dirty prestige upgrade)
   getMaxDirt() {
     const maxPct = (this.dirt && this.dirt.maxCapPercent != null) ? this.dirt.maxCapPercent : 1.00;
-    return this.room.dirtCapacity * maxPct;
+    let baseCap = (this.room && this.room.dirtCapacity != null) ? this.room.dirtCapacity : 10;
+    if (this.prestigeEffects) {
+      if (typeof this.prestigeEffects.maxRoomDirt === 'number' && this.prestigeEffects.maxRoomDirt > baseCap) {
+        baseCap = this.prestigeEffects.maxRoomDirt;
+      }
+      if (typeof this.prestigeEffects.addRoomDirt === 'number') {
+        baseCap += this.prestigeEffects.addRoomDirt;
+      }
+    }
+    return baseCap * maxPct;
   },
 
   // Current purchase cost for an upgrade (base cost * mult^level)

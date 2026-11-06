@@ -55,6 +55,13 @@ import {
   initSettingsListeners,
   startAutoSave
 } from './settings.js';
+import {
+  applyPrestigeEffects,
+  updatePrestigeButtonVisibility,
+  initPrestigeListeners,
+  closePrestigeTree,
+  togglePrestigeTree
+} from './prestige.js';
 
 // --- Resize Handling ---
 function onResize() {
@@ -77,17 +84,20 @@ function onResize() {
 }
 
 // --- Input Event Listeners ---
-const UI_INTERACTIVE_SELECTOR = 'button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"], #configs-modal-overlay, .configs-modal-card, input[type="range"]';
+const UI_INTERACTIVE_SELECTOR = 'button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"], #configs-modal-overlay, .configs-modal-card, input[type="range"], #prestige-tree-overlay, .prestige-node';
 
 function onMouseDown(e) {
   // Prevent vacuum movement/cleaning when clicking buttons, upgrade cards, or UI controls
-  if (e.target && e.target.closest(UI_INTERACTIVE_SELECTOR)) {
+  if (state.isPrestigeTreeOpen || (e.target && e.target.closest(UI_INTERACTIVE_SELECTOR))) {
     state.isLeftMouseDown = false;
     return;
   }
 
   if (state.stats) {
     state.stats.totalClicks = (state.stats.totalClicks || 0) + 1;
+  }
+  if (state.currentPrestigeStats) {
+    state.currentPrestigeStats.totalClicks = (state.currentPrestigeStats.totalClicks || 0) + 1;
   }
 
   if (e.button === 0) { // Left click: move
@@ -232,11 +242,15 @@ function initInputListeners() {
     } else if (e.key === 'e' || e.key === 'E' || e.key === 'b' || e.key === 'B') {
       toggleShop();
     } else if (e.key === 'Escape') {
-      if (state.isConfigsOpen) {
+      if (state.isPrestigeTreeOpen) {
+        closePrestigeTree();
+      } else if (state.isConfigsOpen) {
         closeConfigsModal();
       } else {
         closeShop();
       }
+    } else if (e.key === 'p' || e.key === 'P') {
+      togglePrestigeTree();
     } else if (e.key === 'c' || e.key === 'C') {
       toggleConfigsModal();
     } else if (e.key === 'm' || e.key === 'M') {
@@ -252,6 +266,7 @@ function initInputListeners() {
 
   initShopButtonListeners();
   initSettingsListeners();
+  initPrestigeListeners();
 }
 
 // --- Main Animation Loop ---
@@ -301,6 +316,7 @@ function render(time) {
 function init() {
   initInputListeners();
   loadGame();
+  applyPrestigeEffects();
 
   state.cleanerAngle = Math.PI * 0.5;
   Values.cleanerAngle = state.cleanerAngle;
@@ -308,6 +324,7 @@ function init() {
   if (!initWebGL()) return;
   initTextures();
   updateDirtShopVisibility();
+  updatePrestigeButtonVisibility();
   initShopUI();
   updateUpgradesAndShopUI();
   syncAutoCleaners();

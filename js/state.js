@@ -84,12 +84,46 @@ export const state = {
   isLeftMouseDown: false,
   isShopOpen: false,
   isConfigsOpen: false,
+  isPrestigeTreeOpen: false,
   hadPlayedFullAlert: false,
 
-  // Game Statistics (All-Time & Fun/Useless info)
+  // Prestige State (Persisted across prestiges & saves)
+  prestige: {
+    unlocked: false,
+    pp: 0,
+    totalPP: 0,
+    count: 0,
+    justPrestiged: false,
+    purchased: new Set(),
+    upgradeLevels: {},
+    get points() {
+      return this.pp;
+    },
+    set points(val) {
+      this.pp = val;
+    },
+    get timesPrestiged() {
+      return this.count;
+    },
+    set timesPrestiged(val) {
+      this.count = val;
+    }
+  },
+
+  // Game Statistics (All-Time Lifetime stats)
   stats: {
     totalDustCollected: 0.0,
     totalDirtCleaned: 0.0,
+    totalDistanceTraveled: 0.0,
+    totalTimePlayed: 0.0,
+    totalStationUnloads: 0,
+    totalClicks: 0
+  },
+
+  // Current Prestige Run Statistics (Reset on each prestige, separate from lifetime stats)
+  currentPrestigeStats: {
+    totalDirtCleaned: 0.0,
+    totalDustCollected: 0.0,
     totalDistanceTraveled: 0.0,
     totalTimePlayed: 0.0,
     totalStationUnloads: 0,
@@ -122,9 +156,16 @@ export const state = {
   autoCleanerParticles: []
 };
 
+Values.state = state;
+Values.updateRoomGeometry = updateRoomGeometry;
 Values.cleanerPos = state.cleanerPos;
 Values.cleanerAngle = state.cleanerAngle;
 Values.autoCleaners = state.autoCleaners;
+Values.prestige = state.prestige;
+Values.stats = state.stats;
+Values.lifetimeStats = state.stats;
+state.lifetimeStats = state.stats;
+Values.currentPrestigeStats = state.currentPrestigeStats;
 
 export function syncGridDimensions() {
   state.GRID_RES = Values.room.gridRes;

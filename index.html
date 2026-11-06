@@ -76,6 +76,14 @@
         <span id="storage-dirt-value" class="storage-value-text">0.0g</span>
       </div>
     </div>
+
+    <!-- Prestige Points Storage Card -->
+    <div class="storage-card-indicator pp-storage-card hidden" id="storage-pp-card" title="Available Prestige Points">
+      <div class="storage-indicator-label"><span>🔮</span>PP</div>
+      <div class="storage-indicator-val-row">
+        <span id="storage-pp-value" class="storage-value-text">0 PP</span>
+      </div>
+    </div>
   </aside>
 
   <!-- Bottom Menu Dock: brown squares with light brown outlines and dust/dirt icons for shops -->
@@ -87,6 +95,10 @@
     <button id="dirt-shop-btn" class="menu-square-btn hidden" title="Dirt Shop" aria-label="Dirt Shop">
       <img src="assets/icons/Dirt.png" alt="Dirt Shop" class="menu-btn-icon" draggable="false">
       <span class="menu-btn-label">DIRT</span>
+    </button>
+    <button id="prestige-dock-btn" class="menu-square-btn prestige-dock-btn hidden" title="Prestige Tree (P)" aria-label="Prestige Tree">
+      <span class="menu-btn-emoji" aria-hidden="true">🌳</span>
+      <span class="menu-btn-label">PRESTIGE</span>
     </button>
   </nav>
 
@@ -306,6 +318,33 @@
           </div>
         </section>
       </div>
+    </div>
+  </div>
+
+  <!-- Full-Screen Black Prestige Tree Interface -->
+  <div id="prestige-tree-overlay" class="prestige-tree-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="prestige-tree-heading">
+    <!-- Top Header: Title & Available PP -->
+    <header class="prestige-top-bar">
+      <h2 id="prestige-tree-heading" class="prestige-tree-title">Prestige Tree</h2>
+      <div class="prestige-pp-badge">
+        <span class="prestige-pp-label">Available PP:</span>
+        <span id="prestige-available-pp" class="prestige-pp-value">0 PP</span>
+      </div>
+    </header>
+
+    <!-- Interactive Tree Canvas (Connecting White Bars + Circular Nodes) -->
+    <div id="prestige-tree-canvas" class="prestige-tree-canvas">
+      <div id="prestige-links-layer" class="prestige-links-layer"></div>
+      <div id="prestige-nodes-layer" class="prestige-nodes-layer"></div>
+    </div>
+
+    <!-- Node Hover Tooltip -->
+    <div id="prestige-node-tooltip" class="prestige-node-tooltip hidden" role="tooltip"></div>
+
+    <!-- Bottom-Right Actions: Purple Prestige Button next to Cancel -->
+    <div class="prestige-bottom-actions">
+      <button id="prestige-confirm-btn" class="prestige-btn-purple" type="button">Prestige (+0 PP)</button>
+      <button id="prestige-cancel-btn" class="prestige-btn-cancel" type="button">Cancel</button>
     </div>
   </div>
 

@@ -776,6 +776,14 @@ export function updateCapacityAndStorageUI() {
   }
   if (dirtBadge) {
     dirtBadge.classList.toggle('active', state.currentScreenDirtGrams > 0.1);
+    dirtBadge.title = `Dirt on Screen (Capped at ${maxDirt.toFixed(0)}g)`;
+  }
+
+  if (typeof Values.updatePrestigeButtonVisibility === 'function') {
+    Values.updatePrestigeButtonVisibility();
+  }
+  if (state.isPrestigeTreeOpen && typeof Values.updatePrestigeTreeUI === 'function') {
+    Values.updatePrestigeTreeUI();
   }
 
   updateUpgradesAndShopUI();
@@ -960,6 +968,22 @@ export function getTotalDirtCleaned() {
   return Math.max(tracked, currentDirt);
 }
 
+export function getCurrentPrestigeDirtCleaned() {
+  const tracked = (state.currentPrestigeStats && typeof state.currentPrestigeStats.totalDirtCleaned === 'number')
+    ? state.currentPrestigeStats.totalDirtCleaned
+    : 0;
+  const currentDirt = (Values.storage.dirt || 0) + (Values.vacuum.storedDirt || 0) + (stationStorage ? stationStorage.dirt : 0);
+  return Math.max(tracked, currentDirt);
+}
+
+export function getCurrentPrestigeDustCollected() {
+  const tracked = (state.currentPrestigeStats && typeof state.currentPrestigeStats.totalDustCollected === 'number')
+    ? state.currentPrestigeStats.totalDustCollected
+    : 0;
+  const currentDust = (Values.storage.dust || 0) + (Values.vacuum.storedDust || 0) + (stationStorage ? stationStorage.dust : 0);
+  return Math.max(tracked, currentDust);
+}
+
 export function getTotalUpgradesBought() {
   let count = 0;
   if (Values.shops) {
@@ -1024,12 +1048,15 @@ export function updateConfigsStatsUI() {
 
   const totalDust = getTotalDustCollected();
   const totalDirt = getTotalDirtCleaned();
+  const currentPrestigeDirt = getCurrentPrestigeDirtCleaned();
 
   if (dom.statTotalDust) dom.statTotalDust.textContent = formatGrams(totalDust);
   if (dom.statTotalDustSub) dom.statTotalDustSub.textContent = `${(totalDust / 1000).toFixed(3)} kg all-time`;
 
   if (dom.statTotalDirt) dom.statTotalDirt.textContent = formatGrams(totalDirt);
-  if (dom.statTotalDirtSub) dom.statTotalDirtSub.textContent = `${(totalDirt / 1000).toFixed(3)} kg all-time`;
+  if (dom.statTotalDirtSub) {
+    dom.statTotalDirtSub.textContent = `${(totalDirt / 1000).toFixed(3)} kg all-time (${formatGrams(currentPrestigeDirt)} this run)`;
+  }
 
   if (dom.statStorageDust) dom.statStorageDust.textContent = formatGrams(Values.storage.dust || 0);
   if (dom.statStorageDirt) dom.statStorageDirt.textContent = formatGrams(Values.storage.dirt || 0);
