@@ -500,6 +500,7 @@ export function updateAutoCleanersSimulation(dt, now, onUpdateUI) {
         bot.stored = 0;
         bot.storedDust = 0;
         bot.storedDirt = 0;
+        if (state.stats) state.stats.totalStationUnloads = (state.stats.totalStationUnloads || 0) + 1;
         spawnFloatingText('✦ Stored!', bot.x, bot.y - bot.radius - 8, '#38bdf8');
         bot.state = 'leaving';
         const margin = Math.max(25, bot.radius * 2.5);
@@ -646,6 +647,10 @@ export function updateAutoCleanersSimulation(dt, now, onUpdateUI) {
       }
 
       if (botDustGained > 0 || botDirtGained > 0) {
+        if (state.stats) {
+          if (botDustGained > 0) state.stats.totalDustCollected += botDustGained;
+          if (botDirtGained > 0) state.stats.totalDirtCleaned += botDirtGained;
+        }
         if (botDustGained > 0) {
           state.currentScreenDustGrams = Math.max(0, state.currentScreenDustGrams - botDustGained);
         }
@@ -702,6 +707,10 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
   prevCleanerPos.x = cleanerPos.x;
   prevCleanerPos.y = cleanerPos.y;
 
+  if (state.stats) {
+    state.stats.totalTimePlayed += dt;
+  }
+
   const maxCapacity = getMaxVacuumCapacity();
   const isVacuumFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
 
@@ -730,6 +739,9 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
     Values.storage.dirt = (Values.storage.dirt || 0) + transferDirt;
 
     if (Values.vacuum.stored < 0.0001) {
+      if (transferTotal > 0.001 && state.stats) {
+        state.stats.totalStationUnloads = (state.stats.totalStationUnloads || 0) + 1;
+      }
       Values.vacuum.stored = 0.0;
       Values.vacuum.storedDust = 0.0;
       Values.vacuum.storedDirt = 0.0;
@@ -769,6 +781,10 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
       cleanerPos.y += (dy / distToMouse) * step;
 
       clampCleanerToPlayfield(cleanerPos, cleanerRadius);
+
+      if (state.stats) {
+        state.stats.totalDistanceTraveled += Math.hypot(cleanerPos.x - prevCleanerPos.x, cleanerPos.y - prevCleanerPos.y);
+      }
 
       if (distToMouse > 1.0) {
         const targetAngle = Math.atan2(dy, dx);
@@ -844,6 +860,10 @@ export function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
       }
 
       if (dustGained > 0 || dirtCleanedGrams > 0) {
+        if (state.stats) {
+          if (dustGained > 0) state.stats.totalDustCollected += dustGained;
+          if (dirtCleanedGrams > 0) state.stats.totalDirtCleaned += dirtCleanedGrams;
+        }
         if (dustGained > 0) {
           state.currentScreenDustGrams = Math.max(0, state.currentScreenDustGrams - dustGained);
         }

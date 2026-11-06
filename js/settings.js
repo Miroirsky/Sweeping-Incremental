@@ -18,7 +18,10 @@ import {
   updateUpgradesAndShopUI,
   calculateCleanedPercentage,
   updateCapacityAndStorageUI,
-  showResetToast
+  showResetToast,
+  updateSoundUI,
+  updateConfigsStatsUI,
+  initConfigsListeners
 } from './ui.js';
 
 export function saveGame() {
@@ -55,7 +58,16 @@ export function saveGame() {
       },
       upgrades: upgradeLevels,
       milestones: Array.from(state.reachedMilestones),
-      isMuted: !!(window.soundEngine && window.soundEngine.isMuted)
+      isMuted: !!(window.soundEngine && window.soundEngine.isMuted),
+      volume: (window.soundEngine && typeof window.soundEngine.volume === 'number') ? window.soundEngine.volume : 0.6,
+      stats: {
+        totalDustCollected: Number(state.stats ? state.stats.totalDustCollected : 0) || 0,
+        totalDirtCleaned: Number(state.stats ? state.stats.totalDirtCleaned : 0) || 0,
+        totalDistanceTraveled: Number(state.stats ? state.stats.totalDistanceTraveled : 0) || 0,
+        totalTimePlayed: Number(state.stats ? state.stats.totalTimePlayed : 0) || 0,
+        totalStationUnloads: Number(state.stats ? state.stats.totalStationUnloads : 0) || 0,
+        totalClicks: Number(state.stats ? state.stats.totalClicks : 0) || 0
+      }
     };
 
     localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
@@ -113,11 +125,30 @@ export function loadGame() {
       }
     }
 
-    // Restore audio mute if saved
+    // Restore audio volume and mute if saved
+    if (typeof data.volume === 'number' && window.soundEngine && typeof window.soundEngine.setVolume === 'function') {
+      window.soundEngine.setVolume(data.volume);
+    }
     if (typeof data.isMuted === 'boolean' && window.soundEngine) {
       window.soundEngine.isMuted = data.isMuted;
       if (dom.soundIcon) dom.soundIcon.textContent = data.isMuted ? '🔇' : '🔊';
       if (dom.soundBtn) dom.soundBtn.title = data.isMuted ? 'Unmute Sound (M)' : 'Mute Sound (M)';
+      if (dom.modalSoundIcon) dom.modalSoundIcon.textContent = data.isMuted ? '🔇' : '🔊';
+      if (dom.modalSoundToggleText) dom.modalSoundToggleText.textContent = data.isMuted ? 'Sound: Muted' : 'Sound: Enabled';
+    }
+    if (dom.volumeSlider && window.soundEngine) {
+      dom.volumeSlider.value = Math.round((window.soundEngine.volume || 0.6) * 100);
+      if (dom.volumeVal) dom.volumeVal.textContent = `${dom.volumeSlider.value}%`;
+    }
+
+    // Restore statistics
+    if (data.stats && state.stats) {
+      state.stats.totalDustCollected = Math.max(0, Number(data.stats.totalDustCollected) || 0);
+      state.stats.totalDirtCleaned = Math.max(0, Number(data.stats.totalDirtCleaned) || 0);
+      state.stats.totalDistanceTraveled = Math.max(0, Number(data.stats.totalDistanceTraveled) || 0);
+      state.stats.totalTimePlayed = Math.max(0, Number(data.stats.totalTimePlayed) || 0);
+      state.stats.totalStationUnloads = Math.max(0, Number(data.stats.totalStationUnloads) || 0);
+      state.stats.totalClicks = Math.max(0, Number(data.stats.totalClicks) || 0);
     }
 
     return true;
@@ -144,6 +175,14 @@ export function resetGame() {
 
   state.noiseOffset = [Math.random() * 100.0, Math.random() * 100.0];
   state.reachedMilestones.clear();
+  if (state.stats) {
+    state.stats.totalDustCollected = 0.0;
+    state.stats.totalDirtCleaned = 0.0;
+    state.stats.totalDistanceTraveled = 0.0;
+    state.stats.totalTimePlayed = 0.0;
+    state.stats.totalStationUnloads = 0;
+    state.stats.totalClicks = 0;
+  }
   state.particles.length = 0;
   state.transferParticles.length = 0;
   state.splashParticles.length = 0;
@@ -197,6 +236,8 @@ export function resetGame() {
   updateUpgradesAndShopUI();
   calculateCleanedPercentage();
   updateCapacityAndStorageUI();
+  updateSoundUI();
+  updateConfigsStatsUI();
 
   if (window.soundEngine) {
     window.soundEngine.resume();
@@ -206,7 +247,7 @@ export function resetGame() {
 }
 
 export function initSettingsListeners() {
-  const { soundBtn, soundIcon, resetBtn } = dom;
+  const { soundBtn } = dom;
 
   if (soundBtn) {
     soundBtn.addEventListener('pointerdown', (e) => {
@@ -222,29 +263,14 @@ export function initSettingsListeners() {
       state.isLeftMouseDown = false;
       if (window.soundEngine) {
         window.soundEngine.resume();
-        const unmuted = window.soundEngine.toggleMute();
-        if (soundIcon) soundIcon.textContent = unmuted ? '🔊' : '🔇';
-        soundBtn.title = unmuted ? 'Mute Sound (M)' : 'Unmute Sound (M)';
+        window.soundEngine.toggleMute();
+        updateSoundUI();
         saveGame();
       }
     });
   }
 
-  if (resetBtn) {
-    resetBtn.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      state.isLeftMouseDown = false;
-    });
-    resetBtn.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      state.isLeftMouseDown = false;
-    });
-    resetBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      state.isLeftMouseDown = false;
-      handleResetRequest();
-    });
-  }
+  initConfigsListeners(handleResetRequest);
 }
 
 export function startAutoSave() {

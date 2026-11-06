@@ -5,6 +5,7 @@
 import { Values, MILESTONES } from './data.js';
 import {
   state,
+  stationStorage,
   updateRoomGeometry,
   clampCleanerToPlayfield,
   getMaxVacuumCapacity,
@@ -37,10 +38,45 @@ export const dom = {
   storageDirtValue: document.getElementById('storage-dirt-value'),
   soundBtn: document.getElementById('sound-btn'),
   soundIcon: document.getElementById('sound-icon'),
-  resetBtn: document.getElementById('reset-btn'),
+  resetBtn: document.getElementById('reset-btn') || document.getElementById('modal-reset-btn'),
+  configBtn: document.getElementById('config-btn'),
   hintOverlay: document.getElementById('hint-overlay'),
   toast: document.getElementById('toast'),
   toastText: document.getElementById('toast-text'),
+
+  // Configs Modal Elements
+  configsModalOverlay: document.getElementById('configs-modal-overlay'),
+  configsModalCard: document.getElementById('configs-modal-card'),
+  configsCloseBtn: document.getElementById('configs-close-btn'),
+  tabBtnStats: document.getElementById('tab-btn-stats'),
+  tabBtnSettings: document.getElementById('tab-btn-settings'),
+  paneStats: document.getElementById('pane-stats'),
+  paneSettings: document.getElementById('pane-settings'),
+  modalSoundToggleBtn: document.getElementById('modal-sound-toggle-btn'),
+  modalSoundIcon: document.getElementById('modal-sound-icon'),
+  modalSoundToggleText: document.getElementById('modal-sound-toggle-text'),
+  volumeSlider: document.getElementById('sound-volume-slider'),
+  volumeVal: document.getElementById('volume-val-badge'),
+  modalResetBtn: document.getElementById('modal-reset-btn'),
+
+  // Stat Elements
+  statTotalDust: document.getElementById('stat-total-dust'),
+  statTotalDustSub: document.getElementById('stat-total-dust-sub'),
+  statTotalDirt: document.getElementById('stat-total-dirt'),
+  statTotalDirtSub: document.getElementById('stat-total-dirt-sub'),
+  statStorageDust: document.getElementById('stat-storage-dust'),
+  statStorageDirt: document.getElementById('stat-storage-dirt'),
+  statCleanGrade: document.getElementById('stat-clean-grade'),
+  statCleanPercent: document.getElementById('stat-clean-percent'),
+  statTimePlayed: document.getElementById('stat-time-played'),
+  statBotCount: document.getElementById('stat-bot-count'),
+  statBotSub: document.getElementById('stat-bot-sub'),
+  statUpgradesBought: document.getElementById('stat-upgrades-bought'),
+  statDistanceTraveled: document.getElementById('stat-distance-traveled'),
+  statStationUnloads: document.getElementById('stat-station-unloads'),
+  statTotalClicks: document.getElementById('stat-total-clicks'),
+  statMitesEvicted: document.getElementById('stat-mites-evicted'),
+  statBunniesPacified: document.getElementById('stat-bunnies-pacified'),
 
   // Shop Elements
   dustShopBtn: document.getElementById('dust-shop-btn') || document.getElementById('shop-btn'),
@@ -906,6 +942,267 @@ export function initShopButtonListeners() {
       e.stopPropagation();
       state.isLeftMouseDown = false;
       toggleShop('dirtShop');
+    });
+  }
+}
+
+// --- Configurations & Statistics Functions ---
+
+export function getTotalDustCollected() {
+  const currentDust = (Values.storage.dust || 0) + (Values.vacuum.storedDust || 0) + (stationStorage ? stationStorage.dust : 0);
+  const tracked = (state.stats && typeof state.stats.totalDustCollected === 'number') ? state.stats.totalDustCollected : 0;
+  return Math.max(tracked, currentDust);
+}
+
+export function getTotalDirtCleaned() {
+  const currentDirt = (Values.storage.dirt || 0) + (Values.vacuum.storedDirt || 0) + (stationStorage ? stationStorage.dirt : 0);
+  const tracked = (state.stats && typeof state.stats.totalDirtCleaned === 'number') ? state.stats.totalDirtCleaned : 0;
+  return Math.max(tracked, currentDirt);
+}
+
+export function getTotalUpgradesBought() {
+  let count = 0;
+  if (Values.shops) {
+    for (const sKey of Object.keys(Values.shops)) {
+      const s = Values.shops[sKey];
+      if (s) {
+        for (const uKey of Object.keys(s)) {
+          const u = s[uKey];
+          if (u && typeof u.level === 'number') count += u.level;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+function formatGrams(g) {
+  const val = Number(g) || 0;
+  if (val >= 1000) {
+    return `${(val / 1000).toFixed(2)} kg`;
+  }
+  return `${val.toFixed(1)}g`;
+}
+
+function formatPlaytime(totalSeconds) {
+  const sec = Math.floor(totalSeconds % 60);
+  const min = Math.floor((totalSeconds / 60) % 60);
+  const hrs = Math.floor(totalSeconds / 3600);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(hrs)}:${pad(min)}:${pad(sec)}`;
+}
+
+function getCleanlinessGrade(percent) {
+  if (percent >= 99.5) return '✨ SSS - Sterile Lab';
+  if (percent >= 90) return '🌟 SS - Pristine Showroom';
+  if (percent >= 75) return '⭐ S - Sparkly Clean';
+  if (percent >= 50) return '👍 A - Very Tidy';
+  if (percent >= 25) return '🧹 B - In Progress';
+  return '🕸️ C - Dusty Attic';
+}
+
+export function updateSoundUI() {
+  const isMuted = !window.soundEngine || window.soundEngine.isMuted;
+  const currentVol = (window.soundEngine && typeof window.soundEngine.volume === 'number') ? window.soundEngine.volume : 0.6;
+
+  if (dom.soundIcon) dom.soundIcon.textContent = isMuted ? '🔇' : '🔊';
+  if (dom.soundBtn) dom.soundBtn.title = isMuted ? 'Unmute Sound (M)' : 'Mute Sound (M)';
+
+  if (dom.modalSoundIcon) dom.modalSoundIcon.textContent = isMuted ? '🔇' : '🔊';
+  if (dom.modalSoundToggleText) dom.modalSoundToggleText.textContent = isMuted ? 'Sound: Muted' : 'Sound: Enabled';
+
+  if (dom.volumeSlider) {
+    dom.volumeSlider.value = Math.round(currentVol * 100);
+  }
+  if (dom.volumeVal) {
+    dom.volumeVal.textContent = `${Math.round(currentVol * 100)}%`;
+  }
+}
+
+export function updateConfigsStatsUI() {
+  if (!state.isConfigsOpen) return;
+
+  const totalDust = getTotalDustCollected();
+  const totalDirt = getTotalDirtCleaned();
+
+  if (dom.statTotalDust) dom.statTotalDust.textContent = formatGrams(totalDust);
+  if (dom.statTotalDustSub) dom.statTotalDustSub.textContent = `${(totalDust / 1000).toFixed(3)} kg all-time`;
+
+  if (dom.statTotalDirt) dom.statTotalDirt.textContent = formatGrams(totalDirt);
+  if (dom.statTotalDirtSub) dom.statTotalDirtSub.textContent = `${(totalDirt / 1000).toFixed(3)} kg all-time`;
+
+  if (dom.statStorageDust) dom.statStorageDust.textContent = formatGrams(Values.storage.dust || 0);
+  if (dom.statStorageDirt) dom.statStorageDirt.textContent = formatGrams(Values.storage.dirt || 0);
+
+  const cleanPct = state.cleanedPercent || 0;
+  if (dom.statCleanGrade) dom.statCleanGrade.textContent = getCleanlinessGrade(cleanPct);
+  if (dom.statCleanPercent) dom.statCleanPercent.textContent = `${cleanPct.toFixed(1)}% Floor Cleared`;
+
+  const timePlayed = (state.stats && state.stats.totalTimePlayed) || 0;
+  if (dom.statTimePlayed) dom.statTimePlayed.textContent = formatPlaytime(timePlayed);
+
+  const botFleetCount = (state.autoCleaners ? state.autoCleaners.length : 0);
+  if (dom.statBotCount) dom.statBotCount.textContent = `${botFleetCount + 1} Cleaner${botFleetCount > 0 ? 's' : ''}`;
+  if (dom.statBotSub) dom.statBotSub.textContent = `1 Master + ${botFleetCount} Auto Bot${botFleetCount !== 1 ? 's' : ''}`;
+
+  if (dom.statUpgradesBought) dom.statUpgradesBought.textContent = `${getTotalUpgradesBought()} purchased`;
+
+  const distPx = (state.stats && state.stats.totalDistanceTraveled) || 0;
+  const distMeters = distPx / 100; // ~100px per meter
+  if (dom.statDistanceTraveled) {
+    dom.statDistanceTraveled.textContent = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(2)} km` : `${distMeters.toFixed(1)} m`;
+  }
+
+  const unloads = (state.stats && state.stats.totalStationUnloads) || 0;
+  if (dom.statStationUnloads) dom.statStationUnloads.textContent = `${unloads} time${unloads !== 1 ? 's' : ''}`;
+
+  const clicks = (state.stats && state.stats.totalClicks) || 0;
+  if (dom.statTotalClicks) dom.statTotalClicks.textContent = `${clicks} click${clicks !== 1 ? 's' : ''}`;
+
+  const mites = Math.floor(totalDust * 1250);
+  if (dom.statMitesEvicted) dom.statMitesEvicted.textContent = `${mites.toLocaleString()} evicted`;
+
+  const bunnies = Math.floor(totalDust * 3.4);
+  if (dom.statBunniesPacified) dom.statBunniesPacified.textContent = `${bunnies.toLocaleString()} pacified`;
+}
+
+export function switchConfigsTab(tabName) {
+  if (!dom.paneStats || !dom.paneSettings) return;
+
+  if (tabName === 'settings') {
+    dom.paneStats.classList.remove('active');
+    dom.paneSettings.classList.add('active');
+    if (dom.tabBtnStats) dom.tabBtnStats.classList.remove('active');
+    if (dom.tabBtnSettings) dom.tabBtnSettings.classList.add('active');
+  } else {
+    dom.paneSettings.classList.remove('active');
+    dom.paneStats.classList.add('active');
+    if (dom.tabBtnSettings) dom.tabBtnSettings.classList.remove('active');
+    if (dom.tabBtnStats) dom.tabBtnStats.classList.add('active');
+  }
+}
+
+export function openConfigsModal(tab) {
+  if (state.isShopOpen) {
+    closeShop();
+  }
+  state.isConfigsOpen = true;
+  state.isLeftMouseDown = false;
+  state.isRightMouseDown = false;
+
+  if (dom.configsModalOverlay) {
+    dom.configsModalOverlay.classList.remove('hidden');
+  }
+
+  if (tab) {
+    switchConfigsTab(tab);
+  }
+
+  updateSoundUI();
+  updateConfigsStatsUI();
+}
+
+export function closeConfigsModal() {
+  state.isConfigsOpen = false;
+  state.isLeftMouseDown = false;
+  state.isRightMouseDown = false;
+
+  if (dom.configsModalOverlay) {
+    dom.configsModalOverlay.classList.add('hidden');
+  }
+}
+
+export function toggleConfigsModal(tab) {
+  if (state.isConfigsOpen) {
+    closeConfigsModal();
+  } else {
+    openConfigsModal(tab);
+  }
+}
+
+export function initConfigsListeners(handleResetCallback) {
+  // Config button in top-right HUD
+  if (dom.configBtn) {
+    dom.configBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      state.isLeftMouseDown = false;
+    });
+    dom.configBtn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      state.isLeftMouseDown = false;
+    });
+    dom.configBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.isLeftMouseDown = false;
+      toggleConfigsModal();
+    });
+  }
+
+  // Close button (X)
+  if (dom.configsCloseBtn) {
+    dom.configsCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeConfigsModal();
+    });
+  }
+
+  // Click outside card (on overlay backdrop)
+  if (dom.configsModalOverlay) {
+    dom.configsModalOverlay.addEventListener('mousedown', (e) => {
+      if (e.target === dom.configsModalOverlay) {
+        closeConfigsModal();
+      }
+    });
+  }
+
+  // Tabs
+  if (dom.tabBtnStats) {
+    dom.tabBtnStats.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchConfigsTab('stats');
+    });
+  }
+  if (dom.tabBtnSettings) {
+    dom.tabBtnSettings.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchConfigsTab('settings');
+    });
+  }
+
+  // Sound toggle button in modal
+  if (dom.modalSoundToggleBtn) {
+    dom.modalSoundToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (window.soundEngine) {
+        window.soundEngine.resume();
+        window.soundEngine.toggleMute();
+        updateSoundUI();
+        saveGame();
+      }
+    });
+  }
+
+  // Volume slider in modal
+  if (dom.volumeSlider) {
+    dom.volumeSlider.addEventListener('input', (e) => {
+      const val = Number(e.target.value) / 100;
+      if (dom.volumeVal) dom.volumeVal.textContent = `${e.target.value}%`;
+      if (window.soundEngine) {
+        window.soundEngine.resume();
+        window.soundEngine.setVolume(val);
+        updateSoundUI();
+        saveGame();
+      }
+    });
+  }
+
+  // Reset button in modal
+  if (dom.modalResetBtn) {
+    dom.modalResetBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof handleResetCallback === 'function') {
+        handleResetCallback();
+      }
     });
   }
 }

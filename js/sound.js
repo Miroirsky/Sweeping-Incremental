@@ -8,6 +8,7 @@ export class SoundEngine {
     this.ctx = null;
     this.isMuted = false;
     this.isInitialized = false;
+    this.volume = 0.6;
 
     // Vacuum loop nodes
     this.vacuumGain = null;
@@ -28,7 +29,7 @@ export class SoundEngine {
 
       // Master output
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.6, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
 
       // Setup vacuum noise generator (pink/white noise filtered)
@@ -99,9 +100,19 @@ export class SoundEngine {
   toggleMute() {
     this.isMuted = !this.isMuted;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.6, this.ctx.currentTime, 0.05);
+      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime, 0.05);
     }
     return !this.isMuted;
+  }
+
+  setVolume(vol) {
+    this.volume = Math.max(0, Math.min(1, Number(vol) || 0));
+    if (this.volume > 0 && this.isMuted) {
+      this.isMuted = false;
+    }
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime, 0.05);
+    }
   }
 
   updateMovement(speedNorm) {

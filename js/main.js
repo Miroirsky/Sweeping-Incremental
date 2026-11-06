@@ -43,7 +43,11 @@ import {
   closeShop,
   toggleShop,
   fadeOutHint,
-  initShopButtonListeners
+  initShopButtonListeners,
+  openConfigsModal,
+  closeConfigsModal,
+  toggleConfigsModal,
+  updateConfigsStatsUI
 } from './ui.js';
 import {
   loadGame,
@@ -73,13 +77,17 @@ function onResize() {
 }
 
 // --- Input Event Listeners ---
-const UI_INTERACTIVE_SELECTOR = 'button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"]';
+const UI_INTERACTIVE_SELECTOR = 'button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"], #configs-modal-overlay, .configs-modal-card, input[type="range"]';
 
 function onMouseDown(e) {
   // Prevent vacuum movement/cleaning when clicking buttons, upgrade cards, or UI controls
   if (e.target && e.target.closest(UI_INTERACTIVE_SELECTOR)) {
     state.isLeftMouseDown = false;
     return;
+  }
+
+  if (state.stats) {
+    state.stats.totalClicks = (state.stats.totalClicks || 0) + 1;
   }
 
   if (e.button === 0) { // Left click: move
@@ -224,11 +232,15 @@ function initInputListeners() {
     } else if (e.key === 'e' || e.key === 'E' || e.key === 'b' || e.key === 'B') {
       toggleShop();
     } else if (e.key === 'Escape') {
-      closeShop();
+      if (state.isConfigsOpen) {
+        closeConfigsModal();
+      } else {
+        closeShop();
+      }
+    } else if (e.key === 'c' || e.key === 'C') {
+      toggleConfigsModal();
     } else if (e.key === 'm' || e.key === 'M') {
       if (dom.soundBtn) dom.soundBtn.click();
-    } else if (e.key === 'r' || e.key === 'R') {
-      handleResetRequest();
     }
   });
 
@@ -271,6 +283,11 @@ function render(time) {
   if (time - state.lastSampleTime > sampleInterval) {
     state.lastSampleTime = time;
     calculateCleanedPercentage();
+  }
+
+  // Update Configs Stats UI if modal is open
+  if (state.isConfigsOpen) {
+    updateConfigsStatsUI();
   }
 
   // WebGL Draw Call

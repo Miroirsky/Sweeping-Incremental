@@ -32,8 +32,8 @@
     <button id="sound-btn" class="icon-btn" title="Toggle Sound (M)" aria-label="Toggle Sound">
       <span id="sound-icon">🔊</span>
     </button>
-    <button id="reset-btn" class="icon-btn" title="Reset Game Progress (R)" aria-label="Reset Game Progress">
-      <span id="reset-icon">🔄</span>
+    <button id="config-btn" class="icon-btn" title="Configurations & Stats (C)" aria-label="Configurations and Stats">
+      <span id="config-icon">⚙️</span>
     </button>
   </header>
 
@@ -121,6 +121,192 @@
   <!-- Milestone Celebration Toast -->
   <div id="toast" class="toast hidden">
     <span id="toast-text">✨ 25% Cleaned! Great job!</span>
+  </div>
+
+  <!-- Configurations & Stats Modal -->
+  <div id="configs-modal-overlay" class="configs-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="configs-modal-title">
+    <div class="configs-modal-card" id="configs-modal-card">
+      <div class="configs-modal-header">
+        <div class="configs-title-group">
+          <span class="configs-header-icon">⚙️</span>
+          <h2 id="configs-modal-title">Configurations</h2>
+        </div>
+        <button class="configs-close-btn" id="configs-close-btn" title="Close (Escape)" aria-label="Close Configurations">✕</button>
+      </div>
+
+      <!-- Tabs Navigation -->
+      <nav class="configs-tabs-nav" aria-label="Configuration Tabs">
+        <button class="configs-tab-btn active" id="tab-btn-stats" data-tab="stats">
+          <span class="tab-icon">📊</span> Statistics
+        </button>
+        <button class="configs-tab-btn" id="tab-btn-settings" data-tab="settings">
+          <span class="tab-icon">⚙️</span> Settings & Audio
+        </button>
+      </nav>
+
+      <div class="configs-modal-body">
+        <!-- Tab 1: Statistics Panel -->
+        <section class="configs-tab-pane active" id="pane-stats" aria-labelledby="tab-btn-stats">
+          <!-- Primary Totals -->
+          <div class="stats-section">
+            <h3 class="stats-section-title">🏆 Cleaning Totals</h3>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-card-label"><img src="assets/icons/Dust.png" alt="" class="stat-icon-mini" draggable="false"> Total Dust Collected</div>
+                <div class="stat-card-value text-dust" id="stat-total-dust">0.0g</div>
+                <div class="stat-card-sub" id="stat-total-dust-sub">0.00 kg all-time</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-label"><img src="assets/icons/Dirt.png" alt="" class="stat-icon-mini" draggable="false"> Total Dirt Cleaned</div>
+                <div class="stat-card-value text-dirt" id="stat-total-dirt">0.0g</div>
+                <div class="stat-card-sub" id="stat-total-dirt-sub">0.00 kg all-time</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-label">📦 Stored Dust (Infinite)</div>
+                <div class="stat-card-value text-dust" id="stat-storage-dust">0.0g</div>
+                <div class="stat-card-sub">Available currency</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-label">📦 Stored Dirt (Infinite)</div>
+                <div class="stat-card-value text-dirt" id="stat-storage-dirt">0.0g</div>
+                <div class="stat-card-sub">Available currency</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Room Status & Efficiency -->
+          <div class="stats-section">
+            <h3 class="stats-section-title">🧹 Room Status & Fleet</h3>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-card-label">✨ Cleanliness Rating</div>
+                <div class="stat-card-value text-highlight" id="stat-clean-grade">🌟 SS - Pristine</div>
+                <div class="stat-card-sub" id="stat-clean-percent">0.0% Cleaned</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-label">⏱️ Time Spent Sweeping</div>
+                <div class="stat-card-value" id="stat-time-played">00:00:00</div>
+                <div class="stat-card-sub">Total active playtime</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-label">🤖 B.O.B. Fleet Size</div>
+                <div class="stat-card-value" id="stat-bot-count">1 Cleaner</div>
+                <div class="stat-card-sub" id="stat-bot-sub">1 Master + 0 Bots</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-card-label">⬆️ Upgrades Installed</div>
+                <div class="stat-card-value" id="stat-upgrades-bought">0</div>
+                <div class="stat-card-sub">Dust & Dirt combined</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Useless & Fun Info -->
+          <div class="stats-section">
+            <h3 class="stats-section-title">📜 Useless Trivia & Diagnostics</h3>
+            <div class="stats-grid stats-grid-small">
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">🛞 Total Distance Swept</div>
+                <div class="stat-card-value-small" id="stat-distance-traveled">0.0 m</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">🏭 Station Unloads</div>
+                <div class="stat-card-value-small" id="stat-station-unloads">0 times</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">🖱️ Directives / Clicks</div>
+                <div class="stat-card-value-small" id="stat-total-clicks">0 clicks</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">🦠 Evicted Dust Mites</div>
+                <div class="stat-card-value-small" id="stat-mites-evicted">0 mites</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">🐰 Dust Bunnies Pacified</div>
+                <div class="stat-card-value-small" id="stat-bunnies-pacified">0 bunnies</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">🔋 B.O.B. Battery Health</div>
+                <div class="stat-card-value-small text-accent">100% (Cold Fusion)</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">😊 B.O.B. Happiness Index</div>
+                <div class="stat-card-value-small text-accent">100% (Loves Suction)</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">📜 Warranty Status</div>
+                <div class="stat-card-value-small text-muted">Expired 42 days ago</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">🍿 Favorite Snack</div>
+                <div class="stat-card-value-small">Organic Lint & Crumb Mix</div>
+              </div>
+              <div class="stat-card stat-card-compact">
+                <div class="stat-card-label">⛸️ Floor Friction</div>
+                <div class="stat-card-value-small">0.042 μ (Silky Smooth)</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab 2: Settings & Audio & Reset Panel -->
+        <section class="configs-tab-pane" id="pane-settings" aria-labelledby="tab-btn-settings">
+          <!-- Audio Settings -->
+          <div class="settings-card">
+            <h3 class="settings-card-title">🔊 Audio Settings</h3>
+            <div class="settings-row">
+              <div class="settings-info">
+                <div class="settings-label">Sound Effects</div>
+                <div class="settings-desc">Vacuum engine hum, sweeping whooshes, blips & chimes.</div>
+              </div>
+              <button class="settings-toggle-btn" id="modal-sound-toggle-btn">
+                <span id="modal-sound-icon">🔊</span>
+                <span id="modal-sound-toggle-text">Sound: Enabled</span>
+              </button>
+            </div>
+            <div class="settings-row">
+              <div class="settings-info">
+                <div class="settings-label">Master Volume</div>
+                <div class="settings-desc">Adjust overall loudness of audio output.</div>
+              </div>
+              <div class="slider-control-group">
+                <span class="slider-val-badge" id="volume-val-badge">60%</span>
+                <input type="range" id="sound-volume-slider" min="0" max="100" value="60" class="styled-range" aria-label="Master Volume">
+              </div>
+            </div>
+          </div>
+
+          <!-- Controls Reference -->
+          <div class="settings-card">
+            <h3 class="settings-card-title">🎮 Keybinds & Controls</h3>
+            <div class="controls-list">
+              <div class="control-item"><kbd>Left Click (Hold)</kbd> <span>Drive Vacuum to cursor</span></div>
+              <div class="control-item"><kbd>Right Click</kbd> <span>Toggle Vacuum cleaning mode</span></div>
+              <div class="control-item"><kbd>Station</kbd> <span>Enter Docking Station to store</span></div>
+              <div class="control-item"><kbd>E</kbd> / <kbd>B</kbd> <span>Open / Close Upgrades Shop</span></div>
+              <div class="control-item"><kbd>M</kbd> <span>Quick Mute / Unmute Sound</span></div>
+              <div class="control-item"><kbd>C</kbd> <span>Toggle Configurations Menu</span></div>
+              <div class="control-item"><kbd>Esc</kbd> <span>Close active modal or shop</span></div>
+            </div>
+            <p class="controls-note">Note: Progress reset hotkey has been removed to prevent accidental data loss.</p>
+          </div>
+
+          <!-- Danger Zone: Reset Game Progress -->
+          <div class="settings-card danger-card">
+            <h3 class="settings-card-title danger-title">⚠️ Danger Zone</h3>
+            <div class="settings-row">
+              <div class="settings-info">
+                <div class="settings-label danger-label">Reset Game Progress</div>
+                <div class="settings-desc">Completely reset all storage, robotic cleaners, upgrades, and room progress. This cannot be undone!</div>
+              </div>
+              <button class="btn-danger" id="modal-reset-btn">
+                <span>🔄</span> Reset Progress
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
   </div>
 
   <script src="js/bundle.js"></script>

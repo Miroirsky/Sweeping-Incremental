@@ -83,7 +83,18 @@ export const state = {
   isRightMouseDown: false,
   isLeftMouseDown: false,
   isShopOpen: false,
+  isConfigsOpen: false,
   hadPlayedFullAlert: false,
+
+  // Game Statistics (All-Time & Fun/Useless info)
+  stats: {
+    totalDustCollected: 0.0,
+    totalDirtCleaned: 0.0,
+    totalDistanceTraveled: 0.0,
+    totalTimePlayed: 0.0,
+    totalStationUnloads: 0,
+    totalClicks: 0
+  },
 
   // Movement & Position state
   mousePos: { x: window.innerWidth * 0.5, y: window.innerHeight * 0.5 },

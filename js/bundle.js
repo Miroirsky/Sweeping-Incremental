@@ -618,6 +618,7 @@ class SoundEngine {
     this.ctx = null;
     this.isMuted = false;
     this.isInitialized = false;
+    this.volume = 0.6;
 
     // Vacuum loop nodes
     this.vacuumGain = null;
@@ -638,7 +639,7 @@ class SoundEngine {
 
       // Master output
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.6, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
 
       // Setup vacuum noise generator (pink/white noise filtered)
@@ -709,9 +710,19 @@ class SoundEngine {
   toggleMute() {
     this.isMuted = !this.isMuted;
     if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.6, this.ctx.currentTime, 0.05);
+      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime, 0.05);
     }
     return !this.isMuted;
+  }
+
+  setVolume(vol) {
+    this.volume = Math.max(0, Math.min(1, Number(vol) || 0));
+    if (this.volume > 0 && this.isMuted) {
+      this.isMuted = false;
+    }
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime, 0.05);
+    }
   }
 
   updateMovement(speedNorm) {
@@ -1052,7 +1063,18 @@ const state = {
   isRightMouseDown: false,
   isLeftMouseDown: false,
   isShopOpen: false,
+  isConfigsOpen: false,
   hadPlayedFullAlert: false,
+
+  // Game Statistics (All-Time & Fun/Useless info)
+  stats: {
+    totalDustCollected: 0.0,
+    totalDirtCleaned: 0.0,
+    totalDistanceTraveled: 0.0,
+    totalTimePlayed: 0.0,
+    totalStationUnloads: 0,
+    totalClicks: 0
+  },
 
   // Movement & Position state
   mousePos: { x: window.innerWidth * 0.5, y: window.innerHeight * 0.5 },
@@ -2735,6 +2757,7 @@ function updateAutoCleanersSimulation(dt, now, onUpdateUI) {
         bot.stored = 0;
         bot.storedDust = 0;
         bot.storedDirt = 0;
+        if (state.stats) state.stats.totalStationUnloads = (state.stats.totalStationUnloads || 0) + 1;
         spawnFloatingText('✦ Stored!', bot.x, bot.y - bot.radius - 8, '#38bdf8');
         bot.state = 'leaving';
         const margin = Math.max(25, bot.radius * 2.5);
@@ -2881,6 +2904,10 @@ function updateAutoCleanersSimulation(dt, now, onUpdateUI) {
       }
 
       if (botDustGained > 0 || botDirtGained > 0) {
+        if (state.stats) {
+          if (botDustGained > 0) state.stats.totalDustCollected += botDustGained;
+          if (botDirtGained > 0) state.stats.totalDirtCleaned += botDirtGained;
+        }
         if (botDustGained > 0) {
           state.currentScreenDustGrams = Math.max(0, state.currentScreenDustGrams - botDustGained);
         }
@@ -2937,6 +2964,10 @@ function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
   prevCleanerPos.x = cleanerPos.x;
   prevCleanerPos.y = cleanerPos.y;
 
+  if (state.stats) {
+    state.stats.totalTimePlayed += dt;
+  }
+
   const maxCapacity = getMaxVacuumCapacity();
   const isVacuumFull = (Values.vacuum.stored >= maxCapacity - 0.0001);
 
@@ -2965,6 +2996,9 @@ function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
     Values.storage.dirt = (Values.storage.dirt || 0) + transferDirt;
 
     if (Values.vacuum.stored < 0.0001) {
+      if (transferTotal > 0.001 && state.stats) {
+        state.stats.totalStationUnloads = (state.stats.totalStationUnloads || 0) + 1;
+      }
       Values.vacuum.stored = 0.0;
       Values.vacuum.storedDust = 0.0;
       Values.vacuum.storedDirt = 0.0;
@@ -3004,6 +3038,10 @@ function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
       cleanerPos.y += (dy / distToMouse) * step;
 
       clampCleanerToPlayfield(cleanerPos, cleanerRadius);
+
+      if (state.stats) {
+        state.stats.totalDistanceTraveled += Math.hypot(cleanerPos.x - prevCleanerPos.x, cleanerPos.y - prevCleanerPos.y);
+      }
 
       if (distToMouse > 1.0) {
         const targetAngle = Math.atan2(dy, dx);
@@ -3079,6 +3117,10 @@ function updatePlayerAndRoomSimulation(dt, now, onUpdateUI) {
       }
 
       if (dustGained > 0 || dirtCleanedGrams > 0) {
+        if (state.stats) {
+          if (dustGained > 0) state.stats.totalDustCollected += dustGained;
+          if (dirtCleanedGrams > 0) state.stats.totalDirtCleaned += dirtCleanedGrams;
+        }
         if (dustGained > 0) {
           state.currentScreenDustGrams = Math.max(0, state.currentScreenDustGrams - dustGained);
         }
@@ -3196,10 +3238,45 @@ const dom = {
   storageDirtValue: document.getElementById('storage-dirt-value'),
   soundBtn: document.getElementById('sound-btn'),
   soundIcon: document.getElementById('sound-icon'),
-  resetBtn: document.getElementById('reset-btn'),
+  resetBtn: document.getElementById('reset-btn') || document.getElementById('modal-reset-btn'),
+  configBtn: document.getElementById('config-btn'),
   hintOverlay: document.getElementById('hint-overlay'),
   toast: document.getElementById('toast'),
   toastText: document.getElementById('toast-text'),
+
+  // Configs Modal Elements
+  configsModalOverlay: document.getElementById('configs-modal-overlay'),
+  configsModalCard: document.getElementById('configs-modal-card'),
+  configsCloseBtn: document.getElementById('configs-close-btn'),
+  tabBtnStats: document.getElementById('tab-btn-stats'),
+  tabBtnSettings: document.getElementById('tab-btn-settings'),
+  paneStats: document.getElementById('pane-stats'),
+  paneSettings: document.getElementById('pane-settings'),
+  modalSoundToggleBtn: document.getElementById('modal-sound-toggle-btn'),
+  modalSoundIcon: document.getElementById('modal-sound-icon'),
+  modalSoundToggleText: document.getElementById('modal-sound-toggle-text'),
+  volumeSlider: document.getElementById('sound-volume-slider'),
+  volumeVal: document.getElementById('volume-val-badge'),
+  modalResetBtn: document.getElementById('modal-reset-btn'),
+
+  // Stat Elements
+  statTotalDust: document.getElementById('stat-total-dust'),
+  statTotalDustSub: document.getElementById('stat-total-dust-sub'),
+  statTotalDirt: document.getElementById('stat-total-dirt'),
+  statTotalDirtSub: document.getElementById('stat-total-dirt-sub'),
+  statStorageDust: document.getElementById('stat-storage-dust'),
+  statStorageDirt: document.getElementById('stat-storage-dirt'),
+  statCleanGrade: document.getElementById('stat-clean-grade'),
+  statCleanPercent: document.getElementById('stat-clean-percent'),
+  statTimePlayed: document.getElementById('stat-time-played'),
+  statBotCount: document.getElementById('stat-bot-count'),
+  statBotSub: document.getElementById('stat-bot-sub'),
+  statUpgradesBought: document.getElementById('stat-upgrades-bought'),
+  statDistanceTraveled: document.getElementById('stat-distance-traveled'),
+  statStationUnloads: document.getElementById('stat-station-unloads'),
+  statTotalClicks: document.getElementById('stat-total-clicks'),
+  statMitesEvicted: document.getElementById('stat-mites-evicted'),
+  statBunniesPacified: document.getElementById('stat-bunnies-pacified'),
 
   // Shop Elements
   dustShopBtn: document.getElementById('dust-shop-btn') || document.getElementById('shop-btn'),
@@ -4069,6 +4146,267 @@ function initShopButtonListeners() {
   }
 }
 
+// --- Configurations & Statistics Functions ---
+
+function getTotalDustCollected() {
+  const currentDust = (Values.storage.dust || 0) + (Values.vacuum.storedDust || 0) + (stationStorage ? stationStorage.dust : 0);
+  const tracked = (state.stats && typeof state.stats.totalDustCollected === 'number') ? state.stats.totalDustCollected : 0;
+  return Math.max(tracked, currentDust);
+}
+
+function getTotalDirtCleaned() {
+  const currentDirt = (Values.storage.dirt || 0) + (Values.vacuum.storedDirt || 0) + (stationStorage ? stationStorage.dirt : 0);
+  const tracked = (state.stats && typeof state.stats.totalDirtCleaned === 'number') ? state.stats.totalDirtCleaned : 0;
+  return Math.max(tracked, currentDirt);
+}
+
+function getTotalUpgradesBought() {
+  let count = 0;
+  if (Values.shops) {
+    for (const sKey of Object.keys(Values.shops)) {
+      const s = Values.shops[sKey];
+      if (s) {
+        for (const uKey of Object.keys(s)) {
+          const u = s[uKey];
+          if (u && typeof u.level === 'number') count += u.level;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+function formatGrams(g) {
+  const val = Number(g) || 0;
+  if (val >= 1000) {
+    return `${(val / 1000).toFixed(2)} kg`;
+  }
+  return `${val.toFixed(1)}g`;
+}
+
+function formatPlaytime(totalSeconds) {
+  const sec = Math.floor(totalSeconds % 60);
+  const min = Math.floor((totalSeconds / 60) % 60);
+  const hrs = Math.floor(totalSeconds / 3600);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(hrs)}:${pad(min)}:${pad(sec)}`;
+}
+
+function getCleanlinessGrade(percent) {
+  if (percent >= 99.5) return '✨ SSS - Sterile Lab';
+  if (percent >= 90) return '🌟 SS - Pristine Showroom';
+  if (percent >= 75) return '⭐ S - Sparkly Clean';
+  if (percent >= 50) return '👍 A - Very Tidy';
+  if (percent >= 25) return '🧹 B - In Progress';
+  return '🕸️ C - Dusty Attic';
+}
+
+function updateSoundUI() {
+  const isMuted = !window.soundEngine || window.soundEngine.isMuted;
+  const currentVol = (window.soundEngine && typeof window.soundEngine.volume === 'number') ? window.soundEngine.volume : 0.6;
+
+  if (dom.soundIcon) dom.soundIcon.textContent = isMuted ? '🔇' : '🔊';
+  if (dom.soundBtn) dom.soundBtn.title = isMuted ? 'Unmute Sound (M)' : 'Mute Sound (M)';
+
+  if (dom.modalSoundIcon) dom.modalSoundIcon.textContent = isMuted ? '🔇' : '🔊';
+  if (dom.modalSoundToggleText) dom.modalSoundToggleText.textContent = isMuted ? 'Sound: Muted' : 'Sound: Enabled';
+
+  if (dom.volumeSlider) {
+    dom.volumeSlider.value = Math.round(currentVol * 100);
+  }
+  if (dom.volumeVal) {
+    dom.volumeVal.textContent = `${Math.round(currentVol * 100)}%`;
+  }
+}
+
+function updateConfigsStatsUI() {
+  if (!state.isConfigsOpen) return;
+
+  const totalDust = getTotalDustCollected();
+  const totalDirt = getTotalDirtCleaned();
+
+  if (dom.statTotalDust) dom.statTotalDust.textContent = formatGrams(totalDust);
+  if (dom.statTotalDustSub) dom.statTotalDustSub.textContent = `${(totalDust / 1000).toFixed(3)} kg all-time`;
+
+  if (dom.statTotalDirt) dom.statTotalDirt.textContent = formatGrams(totalDirt);
+  if (dom.statTotalDirtSub) dom.statTotalDirtSub.textContent = `${(totalDirt / 1000).toFixed(3)} kg all-time`;
+
+  if (dom.statStorageDust) dom.statStorageDust.textContent = formatGrams(Values.storage.dust || 0);
+  if (dom.statStorageDirt) dom.statStorageDirt.textContent = formatGrams(Values.storage.dirt || 0);
+
+  const cleanPct = state.cleanedPercent || 0;
+  if (dom.statCleanGrade) dom.statCleanGrade.textContent = getCleanlinessGrade(cleanPct);
+  if (dom.statCleanPercent) dom.statCleanPercent.textContent = `${cleanPct.toFixed(1)}% Floor Cleared`;
+
+  const timePlayed = (state.stats && state.stats.totalTimePlayed) || 0;
+  if (dom.statTimePlayed) dom.statTimePlayed.textContent = formatPlaytime(timePlayed);
+
+  const botFleetCount = (state.autoCleaners ? state.autoCleaners.length : 0);
+  if (dom.statBotCount) dom.statBotCount.textContent = `${botFleetCount + 1} Cleaner${botFleetCount > 0 ? 's' : ''}`;
+  if (dom.statBotSub) dom.statBotSub.textContent = `1 Master + ${botFleetCount} Auto Bot${botFleetCount !== 1 ? 's' : ''}`;
+
+  if (dom.statUpgradesBought) dom.statUpgradesBought.textContent = `${getTotalUpgradesBought()} purchased`;
+
+  const distPx = (state.stats && state.stats.totalDistanceTraveled) || 0;
+  const distMeters = distPx / 100; // ~100px per meter
+  if (dom.statDistanceTraveled) {
+    dom.statDistanceTraveled.textContent = distMeters >= 1000 ? `${(distMeters / 1000).toFixed(2)} km` : `${distMeters.toFixed(1)} m`;
+  }
+
+  const unloads = (state.stats && state.stats.totalStationUnloads) || 0;
+  if (dom.statStationUnloads) dom.statStationUnloads.textContent = `${unloads} time${unloads !== 1 ? 's' : ''}`;
+
+  const clicks = (state.stats && state.stats.totalClicks) || 0;
+  if (dom.statTotalClicks) dom.statTotalClicks.textContent = `${clicks} click${clicks !== 1 ? 's' : ''}`;
+
+  const mites = Math.floor(totalDust * 1250);
+  if (dom.statMitesEvicted) dom.statMitesEvicted.textContent = `${mites.toLocaleString()} evicted`;
+
+  const bunnies = Math.floor(totalDust * 3.4);
+  if (dom.statBunniesPacified) dom.statBunniesPacified.textContent = `${bunnies.toLocaleString()} pacified`;
+}
+
+function switchConfigsTab(tabName) {
+  if (!dom.paneStats || !dom.paneSettings) return;
+
+  if (tabName === 'settings') {
+    dom.paneStats.classList.remove('active');
+    dom.paneSettings.classList.add('active');
+    if (dom.tabBtnStats) dom.tabBtnStats.classList.remove('active');
+    if (dom.tabBtnSettings) dom.tabBtnSettings.classList.add('active');
+  } else {
+    dom.paneSettings.classList.remove('active');
+    dom.paneStats.classList.add('active');
+    if (dom.tabBtnSettings) dom.tabBtnSettings.classList.remove('active');
+    if (dom.tabBtnStats) dom.tabBtnStats.classList.add('active');
+  }
+}
+
+function openConfigsModal(tab) {
+  if (state.isShopOpen) {
+    closeShop();
+  }
+  state.isConfigsOpen = true;
+  state.isLeftMouseDown = false;
+  state.isRightMouseDown = false;
+
+  if (dom.configsModalOverlay) {
+    dom.configsModalOverlay.classList.remove('hidden');
+  }
+
+  if (tab) {
+    switchConfigsTab(tab);
+  }
+
+  updateSoundUI();
+  updateConfigsStatsUI();
+}
+
+function closeConfigsModal() {
+  state.isConfigsOpen = false;
+  state.isLeftMouseDown = false;
+  state.isRightMouseDown = false;
+
+  if (dom.configsModalOverlay) {
+    dom.configsModalOverlay.classList.add('hidden');
+  }
+}
+
+function toggleConfigsModal(tab) {
+  if (state.isConfigsOpen) {
+    closeConfigsModal();
+  } else {
+    openConfigsModal(tab);
+  }
+}
+
+function initConfigsListeners(handleResetCallback) {
+  // Config button in top-right HUD
+  if (dom.configBtn) {
+    dom.configBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      state.isLeftMouseDown = false;
+    });
+    dom.configBtn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      state.isLeftMouseDown = false;
+    });
+    dom.configBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.isLeftMouseDown = false;
+      toggleConfigsModal();
+    });
+  }
+
+  // Close button (X)
+  if (dom.configsCloseBtn) {
+    dom.configsCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeConfigsModal();
+    });
+  }
+
+  // Click outside card (on overlay backdrop)
+  if (dom.configsModalOverlay) {
+    dom.configsModalOverlay.addEventListener('mousedown', (e) => {
+      if (e.target === dom.configsModalOverlay) {
+        closeConfigsModal();
+      }
+    });
+  }
+
+  // Tabs
+  if (dom.tabBtnStats) {
+    dom.tabBtnStats.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchConfigsTab('stats');
+    });
+  }
+  if (dom.tabBtnSettings) {
+    dom.tabBtnSettings.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchConfigsTab('settings');
+    });
+  }
+
+  // Sound toggle button in modal
+  if (dom.modalSoundToggleBtn) {
+    dom.modalSoundToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (window.soundEngine) {
+        window.soundEngine.resume();
+        window.soundEngine.toggleMute();
+        updateSoundUI();
+        saveGame();
+      }
+    });
+  }
+
+  // Volume slider in modal
+  if (dom.volumeSlider) {
+    dom.volumeSlider.addEventListener('input', (e) => {
+      const val = Number(e.target.value) / 100;
+      if (dom.volumeVal) dom.volumeVal.textContent = `${e.target.value}%`;
+      if (window.soundEngine) {
+        window.soundEngine.resume();
+        window.soundEngine.setVolume(val);
+        updateSoundUI();
+        saveGame();
+      }
+    });
+  }
+
+  // Reset button in modal
+  if (dom.modalResetBtn) {
+    dom.modalResetBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (typeof handleResetCallback === 'function') {
+        handleResetCallback();
+      }
+    });
+  }
+}
+
 
 /* ==================== settings.js ==================== */
 /**
@@ -4114,7 +4452,16 @@ function saveGame() {
       },
       upgrades: upgradeLevels,
       milestones: Array.from(state.reachedMilestones),
-      isMuted: !!(window.soundEngine && window.soundEngine.isMuted)
+      isMuted: !!(window.soundEngine && window.soundEngine.isMuted),
+      volume: (window.soundEngine && typeof window.soundEngine.volume === 'number') ? window.soundEngine.volume : 0.6,
+      stats: {
+        totalDustCollected: Number(state.stats ? state.stats.totalDustCollected : 0) || 0,
+        totalDirtCleaned: Number(state.stats ? state.stats.totalDirtCleaned : 0) || 0,
+        totalDistanceTraveled: Number(state.stats ? state.stats.totalDistanceTraveled : 0) || 0,
+        totalTimePlayed: Number(state.stats ? state.stats.totalTimePlayed : 0) || 0,
+        totalStationUnloads: Number(state.stats ? state.stats.totalStationUnloads : 0) || 0,
+        totalClicks: Number(state.stats ? state.stats.totalClicks : 0) || 0
+      }
     };
 
     localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
@@ -4172,11 +4519,30 @@ function loadGame() {
       }
     }
 
-    // Restore audio mute if saved
+    // Restore audio volume and mute if saved
+    if (typeof data.volume === 'number' && window.soundEngine && typeof window.soundEngine.setVolume === 'function') {
+      window.soundEngine.setVolume(data.volume);
+    }
     if (typeof data.isMuted === 'boolean' && window.soundEngine) {
       window.soundEngine.isMuted = data.isMuted;
       if (dom.soundIcon) dom.soundIcon.textContent = data.isMuted ? '🔇' : '🔊';
       if (dom.soundBtn) dom.soundBtn.title = data.isMuted ? 'Unmute Sound (M)' : 'Mute Sound (M)';
+      if (dom.modalSoundIcon) dom.modalSoundIcon.textContent = data.isMuted ? '🔇' : '🔊';
+      if (dom.modalSoundToggleText) dom.modalSoundToggleText.textContent = data.isMuted ? 'Sound: Muted' : 'Sound: Enabled';
+    }
+    if (dom.volumeSlider && window.soundEngine) {
+      dom.volumeSlider.value = Math.round((window.soundEngine.volume || 0.6) * 100);
+      if (dom.volumeVal) dom.volumeVal.textContent = `${dom.volumeSlider.value}%`;
+    }
+
+    // Restore statistics
+    if (data.stats && state.stats) {
+      state.stats.totalDustCollected = Math.max(0, Number(data.stats.totalDustCollected) || 0);
+      state.stats.totalDirtCleaned = Math.max(0, Number(data.stats.totalDirtCleaned) || 0);
+      state.stats.totalDistanceTraveled = Math.max(0, Number(data.stats.totalDistanceTraveled) || 0);
+      state.stats.totalTimePlayed = Math.max(0, Number(data.stats.totalTimePlayed) || 0);
+      state.stats.totalStationUnloads = Math.max(0, Number(data.stats.totalStationUnloads) || 0);
+      state.stats.totalClicks = Math.max(0, Number(data.stats.totalClicks) || 0);
     }
 
     return true;
@@ -4203,6 +4569,14 @@ function resetGame() {
 
   state.noiseOffset = [Math.random() * 100.0, Math.random() * 100.0];
   state.reachedMilestones.clear();
+  if (state.stats) {
+    state.stats.totalDustCollected = 0.0;
+    state.stats.totalDirtCleaned = 0.0;
+    state.stats.totalDistanceTraveled = 0.0;
+    state.stats.totalTimePlayed = 0.0;
+    state.stats.totalStationUnloads = 0;
+    state.stats.totalClicks = 0;
+  }
   state.particles.length = 0;
   state.transferParticles.length = 0;
   state.splashParticles.length = 0;
@@ -4256,6 +4630,8 @@ function resetGame() {
   updateUpgradesAndShopUI();
   calculateCleanedPercentage();
   updateCapacityAndStorageUI();
+  updateSoundUI();
+  updateConfigsStatsUI();
 
   if (window.soundEngine) {
     window.soundEngine.resume();
@@ -4265,7 +4641,7 @@ function resetGame() {
 }
 
 function initSettingsListeners() {
-  const { soundBtn, soundIcon, resetBtn } = dom;
+  const { soundBtn } = dom;
 
   if (soundBtn) {
     soundBtn.addEventListener('pointerdown', (e) => {
@@ -4281,29 +4657,14 @@ function initSettingsListeners() {
       state.isLeftMouseDown = false;
       if (window.soundEngine) {
         window.soundEngine.resume();
-        const unmuted = window.soundEngine.toggleMute();
-        if (soundIcon) soundIcon.textContent = unmuted ? '🔊' : '🔇';
-        soundBtn.title = unmuted ? 'Mute Sound (M)' : 'Unmute Sound (M)';
+        window.soundEngine.toggleMute();
+        updateSoundUI();
         saveGame();
       }
     });
   }
 
-  if (resetBtn) {
-    resetBtn.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      state.isLeftMouseDown = false;
-    });
-    resetBtn.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      state.isLeftMouseDown = false;
-    });
-    resetBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      state.isLeftMouseDown = false;
-      handleResetRequest();
-    });
-  }
+  initConfigsListeners(handleResetRequest);
 }
 
 function startAutoSave() {
@@ -4352,13 +4713,17 @@ function onResize() {
 }
 
 // --- Input Event Listeners ---
-const UI_INTERACTIVE_SELECTOR = 'button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"]';
+const UI_INTERACTIVE_SELECTOR = 'button, .menu-square-btn, .upgrade-card, .shop-cards-tray, .hud-top-right, .robot-storage-sidebar, .storage-center-right, [role="button"], #configs-modal-overlay, .configs-modal-card, input[type="range"]';
 
 function onMouseDown(e) {
   // Prevent vacuum movement/cleaning when clicking buttons, upgrade cards, or UI controls
   if (e.target && e.target.closest(UI_INTERACTIVE_SELECTOR)) {
     state.isLeftMouseDown = false;
     return;
+  }
+
+  if (state.stats) {
+    state.stats.totalClicks = (state.stats.totalClicks || 0) + 1;
   }
 
   if (e.button === 0) { // Left click: move
@@ -4503,11 +4868,15 @@ function initInputListeners() {
     } else if (e.key === 'e' || e.key === 'E' || e.key === 'b' || e.key === 'B') {
       toggleShop();
     } else if (e.key === 'Escape') {
-      closeShop();
+      if (state.isConfigsOpen) {
+        closeConfigsModal();
+      } else {
+        closeShop();
+      }
+    } else if (e.key === 'c' || e.key === 'C') {
+      toggleConfigsModal();
     } else if (e.key === 'm' || e.key === 'M') {
       if (dom.soundBtn) dom.soundBtn.click();
-    } else if (e.key === 'r' || e.key === 'R') {
-      handleResetRequest();
     }
   });
 
@@ -4550,6 +4919,11 @@ function render(time) {
   if (time - state.lastSampleTime > sampleInterval) {
     state.lastSampleTime = time;
     calculateCleanedPercentage();
+  }
+
+  // Update Configs Stats UI if modal is open
+  if (state.isConfigsOpen) {
+    updateConfigsStatsUI();
   }
 
   // WebGL Draw Call

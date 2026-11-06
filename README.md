@@ -39,9 +39,9 @@ npm run build
 | **<kbd>E</kbd>** or **<kbd>B</kbd>** | Open / close the Upgrade Shop carousel |
 | **<kbd>←</kbd> / <kbd>→</kbd>** or **<kbd>A</kbd> / <kbd>D</kbd>** | Cycle through upgrades in the carousel tray |
 | **<kbd>Enter</kbd>** | Purchase currently focused upgrade card |
-| **<kbd>Esc</kbd>** | Close the Upgrade Shop tray |
-| **<kbd>M</kbd>** | Toggle audio mute |
-| **<kbd>R</kbd>** | Reset game save data (prompts for confirmation) |
+| **<kbd>C</kbd>** | Open / close the Configurations & Statistics menu |
+| **<kbd>Esc</kbd>** | Close active menu (Upgrade Shop or Configurations) |
+| **<kbd>M</kbd>** | Quick toggle audio mute |
 
 ---
 
@@ -69,6 +69,16 @@ npm run build
   1. *Patrol & Clean*: Bots roam the playfield, vacuuming both dust and dirt within their cleaning radius.
   2. *Full Alert*: Once their canisters reach capacity, bots transition state and navigate toward the docking station doorway.
   3. *Unload & Disperse*: Bots enter the docking station, empty their canisters into infinite storage, and venture back out into the room.
+
+### 5. Configurations & Lifetime Statistics Menu
+Access via the **⚙️ Config** button in the top-right header or by pressing **<kbd>C</kbd>**:
+- **📊 Statistics Tab**:
+  - *Cleaning Totals*: Total all-time dust collected and dirt cleaned (live formatted in grams and kilograms), alongside available infinite storage silos.
+  - *Room Status & Fleet*: Live cleanliness grades (*SSS Sterile Lab* to *C Dusty Attic*), active play session time, fleet size, and total upgrades purchased.
+  - *Fun & Useless Trivia*: Distance swept by B.O.B. (in meters/km), station unload count, directive clicks issued, estimated dust mites evicted, dust bunnies neutralized, perpetual cold fusion battery health, and warranty status.
+- **⚙️ Settings & Audio Tab**:
+  - *Audio Controls*: Master sound toggle (Mute / Unmute) and smooth volume slider (0% to 100%).
+  - *Danger Zone*: Game progress reset button with safe confirmation. *(Note: The <kbd>R</kbd> hotkey has been removed to prevent accidental save wipes during gameplay).*
 
 ---
 
@@ -98,66 +108,12 @@ $$\text{Cost} = \text{BaseCost} \times \text{Multiplier}^{\text{Level}}$$
 | **Auto Speed** | 1.00 g | $\times 1.5$ | Increases auto cleaner movement speed by **+50%** per level | Dirt Unlocked |
 | **Auto Capacity** | 5.00 g | $\times 1.75$ | Increases auto cleaner canister size by **+50%** per level | Dirt Unlocked |
 | **More Dust** | 5.00 g | $\times 2.0$ | Adds **+50%** dust offload bonus & **+30%** room dust density | Dirt Unlocked |
-| **Auto Cleaner** | 5.00 g | $\times 25.0$ | Deploys additional autonomous bots (up to 3 more; 6 total) | More Dust Lvl 1 |
+| **Auto Cleaner** | 1.00 g | $\times 10.0$ | Deploys additional autonomous vacuum bot (up to 3 bots) | Size Lvl 1 |
 
 ---
 
-## 🏗️ Technical Architecture
+## 🎨 Visual & Audio Architecture
 
-The engine is engineered in vanilla JavaScript with no third-party framework dependencies, utilizing hardware-accelerated shaders and Web Audio synthesis:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                          index.html                             │
-└────────────────────────────────┬────────────────────────────────┘
-                                 │
-     ┌───────────────────────────┴───────────────────────────┐
-     ▼                                                       ▼
-┌─────────────────────────┐                             ┌─────────────────────────┐
-│     glcanvas (WebGL)    │                             │ overlay-canvas (2D API) │
-├─────────────────────────┤                             ├─────────────────────────┤
-│ • Procedural carpet     │                             │ • B.O.B. top & base     │
-│ • Dust grid texture     │                             │ • Auto cleaner robots   │
-│ • Dirt grid texture     │                             │ • Dynamic particle FX   │
-│ • Room & station bounds │                             │ • Floating damage text  │
-└─────────────────────────┘                             └─────────────────────────┘
-```
-
-### Source File Breakdown
-- [`js/data.js`](file:///js/data.js): Centralized configuration object (`Values`), dynamic cost formulas, and upgrade milestone configurations.
-- [`js/state.js`](file:///js/state.js): Simulation grid memory buffers (`Float32Array`), room coordinates, and entity positions.
-- [`js/simulation.js`](file:///js/simulation.js): Physics clamping, suction raycasting, auto-bot state machines, and organic dirt clustering algorithms.
-- [`js/renderer.js`](file:///js/renderer.js): WebGL shader pipeline, GLSL fragment shader, dynamic texture updates, and Canvas 2D overlay rendering.
-- [`js/particles.js`](file:///js/particles.js): Particle systems for intake motes, station transfer streams, and floating notifications.
-- [`js/sound.js`](file:///js/sound.js): Procedural audio synthesizer creating filtered pink noise suction loops, motor hum, and harmonic purchase chimes.
-- [`js/ui.js`](file:///js/ui.js): HUD state synchronization, carousel tray 3D math, and DOM interaction management.
-- [`js/settings.js`](file:///js/settings.js): Persistent auto-saving to `localStorage` and progress reset handlers.
-- [`js/main.js`](file:///js/main.js): Input event listeners, window resize throttling, and the core `requestAnimationFrame` loop.
-- [`build.js`](file:///build.js): Bundler script compiling source modules into [`js/bundle.js`](file:///js/bundle.js).
-- [`server.js`](file:///server.js): Built-in zero-dependency Node.js HTTP server.
-
----
-
-## 🎨 Audio & Visual Design
-
-- **Procedural Carpet Shaders**: Custom GLSL shader combines multi-octave 2D Perlin noise with warp distortion to generate tactile woven fabric under clean paths.
-- **Dual-Phase Robot Sprites**: Custom B.O.B. artwork separates the base suction plate from the elevated lid with dynamic orientation tracking.
-- **Synthetic Sound Design**:
-  - *Suction Hum*: Dual bandpass-filtered noise generator modulated by player speed.
-  - *Dirt Suction Thud*: Low-frequency resonant pop on dirt absorption.
-  - *Pneumatic Transfer*: High-frequency pitch blips when offloading at the docking station.
-  - *Chimes & Fanfares*: Procedural arpeggios on upgrade purchase and milestone completion.
-
----
-
-## 💾 Save & Persistence
-
-- **Auto-Save**: Progress (infinite storage, robot canisters, upgrades, and milestones) automatically serializes to `localStorage` every **2 seconds** and immediately upon purchasing upgrades.
-- **Fresh Sessions**: Room dust resets to full on page refresh while preserving all purchased stats and stored materials.
-- **Hard Reset**: Press <kbd>R</kbd> or click the 🔄 icon in the top header to clear all saved progress.
-
----
-
-## 📄 License
-
-MIT License. Open-source and free to adapt, extend, or build upon.
+- **Hardware Acceleration**: Procedural fragment shaders render woven fibers, dynamic dust opacity, organic Voronoi-like dirt patches, and robotic drop shadows.
+- **Particle System**: Procedural canvas particles for dust suction motes, station transfer streams, and organic dirt bursts.
+- **Web Audio Engine**: Pure procedural audio synthesis—no external audio files required. Uses filtered pink noise for vacuum airflow, modulating bandpass frequencies based on cleaner speed, saw-wave motor hum, and custom pentatonic chimes for milestone achievements.
